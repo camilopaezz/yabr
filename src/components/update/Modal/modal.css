@@ -1,5 +1,5 @@
 .update-modal {
-  --primary-color: rgb(224, 30, 90);
+  --primary-color: #f97316;
 
   .update-modal__mask {
     width: 100vw;
@@ -26,6 +26,8 @@
 
     .content__header {
       display: flex;
+      border-start-start-radius: 15px;
+      border-start-end-radius: 15px;
       line-height: 38px;
       background-color: var(--primary-color);
 
@@ -51,14 +53,16 @@
     }
 
     .content__body {
+      border-end-end-radius: 15px;
+      border-end-start-radius: 15px;
       padding: 10px;
-      background-color: #fff;
-      color: #333;
+      background-color: #151515;
+      color: #fff;
     }
 
     .content__footer {
       padding: 10px;
-      background-color: #fff;
+      background-color: #151515;
       display: flex;
       justify-content: flex-end;
 

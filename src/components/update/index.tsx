@@ -17,9 +17,9 @@ const Update = () => {
     onCancel?: () => void
     onOk?: () => void
   }>({
-    onCancel: () => setModalOpen(false),
-    onOk: () => window.ipcRenderer.invoke('start-download'),
-  })
+        onCancel: () => setModalOpen(false),
+        onOk: async () => await window.ipcRenderer.invoke('start-download')
+      })
 
   const checkUpdate = async () => {
     setChecking(true)
@@ -45,7 +45,7 @@ const Update = () => {
         ...state,
         cancelText: 'Cancel',
         okText: 'Update',
-        onOk: () => window.ipcRenderer.invoke('start-download'),
+        onOk: async () => await window.ipcRenderer.invoke('start-download')
       }))
       setUpdateAvailable(true)
     } else {
@@ -68,7 +68,7 @@ const Update = () => {
       ...state,
       cancelText: 'Later',
       okText: 'Install now',
-      onOk: () => window.ipcRenderer.invoke('quit-and-install'),
+      onOk: async () => await window.ipcRenderer.invoke('quit-and-install')
     }))
   }, [])
 
@@ -98,13 +98,14 @@ const Update = () => {
         footer={updateAvailable ? /* hide footer */null : undefined}
       >
         <div className='modal-slot'>
-          {updateError
+          {(updateError != null)
             ? (
               <div>
                 <p>Error downloading the latest version.</p>
                 <p>{updateError.message}</p>
               </div>
-            ) : updateAvailable
+              )
+            : updateAvailable
               ? (
                 <div>
                   <div>The last version is: v{versionInfo?.newVersion}</div>
@@ -112,14 +113,14 @@ const Update = () => {
                   <div className='update__progress'>
                     <div className='progress__title'>Update progress:</div>
                     <div className='progress__bar'>
-                      <Progress percent={progressInfo?.percent} ></Progress>
+                      <Progress percent={progressInfo?.percent} />
                     </div>
                   </div>
                 </div>
-              )
+                )
               : (
                 <div className='can-not-available'>{JSON.stringify(versionInfo ?? {}, null, 2)}</div>
-              )}
+                )}
         </div>
       </Modal>
       <button disabled={checking} onClick={checkUpdate}>

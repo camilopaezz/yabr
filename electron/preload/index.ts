@@ -1,30 +1,41 @@
-import { ipcRenderer, contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
+
+const API = {
+  async selectInput (isBatch: boolean): Promise<string> {
+    return ipcRenderer.invoke('select-input', isBatch)
+  },
+  async selectOutput (): Promise<string> {
+    return ipcRenderer.invoke('select-output')
+  },
+  async removeBackground (inputPath: string, outputPath: string, isBatch: boolean): Promise<string> {
+    return ipcRenderer.invoke('remove-background', inputPath, outputPath, isBatch)
+  }
+}
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
+  on (...args: Parameters<typeof ipcRenderer.on>) {
     const [channel, listener] = args
     return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
   },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
+  off (...args: Parameters<typeof ipcRenderer.off>) {
     const [channel, ...omit] = args
     return ipcRenderer.off(channel, ...omit)
   },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
+  send (...args: Parameters<typeof ipcRenderer.send>) {
     const [channel, ...omit] = args
     return ipcRenderer.send(channel, ...omit)
   },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
+  async invoke (...args: Parameters<typeof ipcRenderer.invoke>) {
     const [channel, ...omit] = args
     return ipcRenderer.invoke(channel, ...omit)
-  },
-
-  // You can expose other APTs you need here.
-  // ...
+  }
 })
 
+contextBridge.exposeInMainWorld('API', API)
+
 // --------- Preload scripts loading ---------
-function domReady(condition: DocumentReadyState[] = ['complete', 'interactive']) {
+async function domReady (condition: DocumentReadyState[] = ['complete', 'interactive']) {
   return new Promise(resolve => {
     if (condition.includes(document.readyState)) {
       resolve(true)
@@ -39,16 +50,16 @@ function domReady(condition: DocumentReadyState[] = ['complete', 'interactive'])
 }
 
 const safeDOM = {
-  append(parent: HTMLElement, child: HTMLElement) {
-    if (!Array.from(parent.children).find(e => e === child)) {
+  append (parent: HTMLElement, child: HTMLElement) {
+    if (Array.from(parent.children).find(e => e === child) == null) {
       return parent.appendChild(child)
     }
   },
-  remove(parent: HTMLElement, child: HTMLElement) {
-    if (Array.from(parent.children).find(e => e === child)) {
+  remove (parent: HTMLElement, child: HTMLElement) {
+    if (Array.from(parent.children).find(e => e === child) != null) {
       return parent.removeChild(child)
     }
-  },
+  }
 }
 
 /**
@@ -57,8 +68,8 @@ const safeDOM = {
  * https://projects.lukehaas.me/css-loaders
  * https://matejkustec.github.io/SpinThatShit
  */
-function useLoading() {
-  const className = `loaders-css__square-spin`
+function useLoading () {
+  const className = 'loaders-css__square-spin'
   const styleContent = `
 @keyframes square-spin {
   25% { transform: perspective(100px) rotateX(180deg) rotateY(0); }
@@ -95,14 +106,14 @@ function useLoading() {
   oDiv.innerHTML = `<div class="${className}"><div></div></div>`
 
   return {
-    appendLoading() {
+    appendLoading () {
       safeDOM.append(document.head, oStyle)
       safeDOM.append(document.body, oDiv)
     },
-    removeLoading() {
+    removeLoading () {
       safeDOM.remove(document.head, oStyle)
       safeDOM.remove(document.body, oDiv)
-    },
+    }
   }
 }
 

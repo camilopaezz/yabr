@@ -3,13 +3,12 @@ import { createRequire } from 'node:module'
 import type {
   ProgressInfo,
   UpdateDownloadedEvent,
-  UpdateInfo,
+  UpdateInfo
 } from 'electron-updater'
 
-const { autoUpdater } = createRequire(import.meta.url)('electron-updater');
+const { autoUpdater } = createRequire(import.meta.url)('electron-updater')
 
-export function update(win: Electron.BrowserWindow) {
-
+export function update (win: Electron.BrowserWindow) {
   // When set to false, the update download will be triggered through the API
   autoUpdater.autoDownload = false
   autoUpdater.disableWebInstaller = false
@@ -44,7 +43,7 @@ export function update(win: Electron.BrowserWindow) {
   ipcMain.handle('start-download', (event: Electron.IpcMainInvokeEvent) => {
     startDownload(
       (error, progressInfo) => {
-        if (error) {
+        if (error != null) {
           // feedback download error message
           event.sender.send('update-error', { message: error.message, error })
         } else {
@@ -65,9 +64,9 @@ export function update(win: Electron.BrowserWindow) {
   })
 }
 
-function startDownload(
+function startDownload (
   callback: (error: Error | null, info: ProgressInfo | null) => void,
-  complete: (event: UpdateDownloadedEvent) => void,
+  complete: (event: UpdateDownloadedEvent) => void
 ) {
   autoUpdater.on('download-progress', (info: ProgressInfo) => callback(null, info))
   autoUpdater.on('error', (error: Error) => callback(error, null))

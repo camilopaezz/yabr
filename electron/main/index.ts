@@ -1,12 +1,86 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, IpcMainInvokeEvent, Notification, dialog, net, protocol } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
+import { spawnSync } from 'child_process'
 import { update } from './update'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const handleRemoveBackground = async (
+  _e: IpcMainInvokeEvent,
+  inputPath: string,
+  outputPath: string,
+  batch: boolean
+): Promise<{
+  resultPath: string
+  consoleLog: string
+}> => {
+  const filename = path.parse(inputPath).name
+  const resultPath = `${outputPath}/${filename}_bg.png`
+
+  // p for batch processing, i for single image processing
+  const args = [batch ? 'p' : 'i', inputPath, batch ? outputPath : resultPath]
+
+  console.log(args.join(' '))
+
+  const child = spawnSync('rembg', args)
+
+  new Notification({
+    title: 'Background Removed',
+    body: 'The background has been removed from the image.'
+  }).show()
+
+  return {
+    resultPath,
+    consoleLog: child.stdout?.toString() || ''
+  }
+}
+
+const handleSelectInput = async (_e: IpcMainInvokeEvent, batch: boolean): Promise<string | undefined> => {
+  if (batch) {
+    const folder = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+
+    if (folder.canceled) {
+      return undefined
+    }
+
+    const folderPath = folder.filePaths[0]
+
+    return folderPath
+  }
+
+  const files = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'Image', extensions: ['jpg', 'png', 'webp', 'tif'] }]
+  })
+
+  if (files.canceled) {
+    return undefined
+  }
+
+  const imagePath = files.filePaths[0]
+
+  return imagePath
+}
+
+const handleSelectOutput = async (): Promise<string | undefined> => {
+  const files = await dialog.showOpenDialog({
+    properties: ['openDirectory']
+  })
+
+  if (files.canceled) {
+    return undefined
+  }
+
+  const outputPath = files.filePaths[0]
+
+  return outputPath
+}
 
 // The built directory structure
 //
@@ -39,24 +113,30 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0)
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'atom', privileges: { bypassCSP: true, secure: true } }
+])
+
 let win: BrowserWindow | null = null
 const preload = path.join(__dirname, '../preload/index.mjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
-async function createWindow() {
+async function createWindow () {
   win = new BrowserWindow({
     title: 'Main window',
     icon: path.join(process.env.VITE_PUBLIC, 'favicon.ico'),
     webPreferences: {
-      preload,
+      preload
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production
       // nodeIntegration: true,
 
       // Consider using contextBridge.exposeInMainWorld
       // Read more on https://www.electronjs.org/docs/latest/tutorial/context-isolation
       // contextIsolation: false,
-    },
+    }
   })
+
+  protocol.handle('atom', (request) => net.fetch('file://' + request.url.slice('atom:\\'.length)))
 
   if (VITE_DEV_SERVER_URL) { // #298
     win.loadURL(VITE_DEV_SERVER_URL)
@@ -89,7 +169,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('second-instance', () => {
-  if (win) {
+  if (win != null) {
     // Focus on the main window if the user tried to open another
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -98,7 +178,7 @@ app.on('second-instance', () => {
 
 app.on('activate', () => {
   const allWindows = BrowserWindow.getAllWindows()
-  if (allWindows.length) {
+  if (allWindows.length > 0) {
     allWindows[0].focus()
   } else {
     createWindow()
@@ -111,8 +191,8 @@ ipcMain.handle('open-win', (_, arg) => {
     webPreferences: {
       preload,
       nodeIntegration: true,
-      contextIsolation: false,
-    },
+      contextIsolation: false
+    }
   })
 
   if (VITE_DEV_SERVER_URL) {
@@ -121,3 +201,7 @@ ipcMain.handle('open-win', (_, arg) => {
     childWindow.loadFile(indexHtml, { hash: arg })
   }
 })
+
+ipcMain.handle('select-input', handleSelectInput)
+ipcMain.handle('select-output', handleSelectOutput)
+ipcMain.handle('remove-background', handleRemoveBackground)
