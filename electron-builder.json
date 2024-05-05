@@ -1,5 +1,7 @@
 {
   "appId": "CamiloPaez.yabr",
+  "productName": "Yabr",
+  "icon": "build/icon.png",
   "asar": true,
   "directories": {
     "output": "release/${version}"
@@ -38,17 +40,14 @@
       "deb",
       "rpm",
       "tar.gz"
-    ]
+    ],
+    "category": "Graphics"
   },
-  "appImage": {
-    "desktop": {
-      "Name": "Yabr",
-      "Type": "Application"
-    }
+  "rpm": {
+    "icon": "build/icon.png"
   },
   "publish": {
-    "provider": "generic",
-    "channel": "latest",
-    "url": "https://github.com/electron-vite/electron-vite-react/releases/download/v0.9.9/"
+    "provider": "github",
+    "channel": "latest"
   }
 }

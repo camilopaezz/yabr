@@ -123,8 +123,13 @@ const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
 async function createWindow () {
   win = new BrowserWindow({
-    title: 'Main window',
+    title: 'Yabr',
     icon: path.join(process.env.VITE_PUBLIC, 'favicon.ico'),
+    autoHideMenuBar: true,
+    width: 1280,
+    height: 720,
+    minWidth: 800,
+    minHeight: 600,
     webPreferences: {
       preload
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production

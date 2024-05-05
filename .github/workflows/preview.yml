@@ -1,0 +1,66 @@
+name: build preview
+
+env: 
+  USE_SYSTEM_FPM: true
+  GH_TOKEN: ${{ secrets.github_token }}
+
+on: 
+  push:
+    tags:
+      - '__dev*'
+
+jobs:
+  build-linux:
+    runs-on: ['ubuntu-latest']
+
+    steps:
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.2
+
+      - name: Install fpm
+        shell: bash
+        run: sudo gem install fpm
+
+      - name: Install rpm
+        run: sudo apt-get install rpm
+
+      - name: Check out Git repository
+        uses: actions/checkout@v1
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Build the application
+        run: npm run build
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-preview-linux
+          path: release/
+
+  build-windows:
+    runs-on: ['windows-latest']
+
+    steps:
+
+      - name: Check out Git repository
+        uses: actions/checkout@v1
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Build the application
+        run: npm run build
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-preview-windows
+          path: release/

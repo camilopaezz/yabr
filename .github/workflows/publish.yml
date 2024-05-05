@@ -1,0 +1,81 @@
+name: publish
+
+env: 
+  USE_SYSTEM_FPM: true
+
+on: 
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-linux:
+    runs-on: ['ubuntu-latest']
+
+    steps:
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.2
+
+      - name: Install fpm
+        shell: bash
+        run: sudo gem install fpm
+
+      - name: Install rpm
+        run: sudo apt-get install rpm
+
+      - name: Check out Git repository
+        uses: actions/checkout@v1
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Electron-builder compiler action ESM
+        uses: camilopaezz/action-electron-compiler-ESM@v1
+        with:
+          # GitHub token, automatically provided to the action
+          # (Optional)
+          github_token: ${{ secrets.github_token }}
+
+          # If the commit is tagged with a version (e.g. "v1.0.0"),
+          # (Optional)
+          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+          # Package manager. NPM, PNPM and Yarn supported. Install Yarn and PNPM yourself. Default is NPM
+          # (Optional)
+          package_manager: NPM
+
+  release-windows:
+    runs-on: ['windows-latest']
+
+    steps:
+
+      - name: Check out Git repository
+        uses: actions/checkout@v1
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Electron-builder compiler action ESM
+        uses: camilopaezz/action-electron-compiler-ESM@v1
+        with:
+          # GitHub token, automatically provided to the action
+          # (Optional)
+          github_token: ${{ secrets.github_token }}
+
+          # If the commit is tagged with a version (e.g. "v1.0.0"),
+          # (Optional)
+          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+          # Package manager. NPM, PNPM and Yarn supported. Install Yarn and PNPM yourself. Default is NPM
+          # (Optional)
+          package_manager: NPM
+
+          # Skip buiding the application
+          # (Optional)
+          skip_build: false
