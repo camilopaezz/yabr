@@ -8,9 +8,9 @@ import UpdateElectron from './components/update'
 import './App.css'
 import ImageSlider from './components/ImageSlider'
 
-function App (): React.ReactElement {
+function App(): React.ReactElement {
   return (
-    <div className='App grid grid-cols-9'>
+    <div className="App flex flex-shrink-0">
       <SideBar>
         <Header />
         <section>
@@ -20,6 +20,7 @@ function App (): React.ReactElement {
         <DebugMenu />
         <UpdateElectron />
       </SideBar>
+
       <ImageSlider />
     </div>
   )

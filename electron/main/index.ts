@@ -28,6 +28,8 @@ const handleRemoveBackground = async (
 
   const child = spawnSync('rembg', args)
 
+  child.error?.message && console.error(child.error.message)
+
   new Notification({
     title: 'Background Removed',
     body: 'The background has been removed from the image.'
