@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { removeBackground } from '@imgly/background-removal-node'
 import fs from 'fs/promises'
 import path from 'path'
+import { handleRemoveBackground, handleSelectImage } from './utils/handlers'
 
 function createWindow(): void {
   // Create the browser window.
@@ -42,34 +43,9 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  ipcMain.handle('select-image', async () => {
-    const { filePaths } = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg'] }]
-    })
-    return filePaths?.[0]
-  })
+  ipcMain.handle('select-image', handleSelectImage)
 
-  ipcMain.handle('remove-background', async (_, file) => {
-    if (!file) return
-
-    const result = await removeBackground(`file://${file}`)
-
-    const ABResult = await result.arrayBuffer()
-
-    const buffer = Buffer.from(ABResult)
-
-    const fileName = path.parse(file).name
-
-    const newFilePath = path.join(path.parse(file).dir, `${fileName}-no-bg.png`)
-
-    try {
-      await fs.writeFile(newFilePath, buffer)
-      console.log('File saved:', newFilePath)
-    } catch (error) {
-      console.error(error)
-    }
-  })
+  ipcMain.handle('remove-background', handleRemoveBackground)
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')

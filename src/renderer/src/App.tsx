@@ -3,7 +3,21 @@ import electronLogo from './assets/electron.svg'
 import { useState } from 'react'
 
 function App(): JSX.Element {
-  const [file, setFile] = useState<undefined | string>(undefined)
+  const [file, setFile] = useState<undefined | string>()
+
+  const handleSelectImage = async (): Promise<void> => {
+    const result = await window.electron.ipcRenderer.invoke('select-image')
+    if (result) {
+      setFile(result)
+    }
+  }
+
+  const handleRemoveBackground = async (): Promise<void> => {
+    const result = await window.electron.ipcRenderer.invoke('remove-background', file)
+    if (result) {
+      setFile(result)
+    }
+  }
 
   return (
     <>
@@ -14,27 +28,9 @@ function App(): JSX.Element {
         &nbsp;and <span className="ts">TypeScript</span>
       </div>
       <p>{file}</p>
-      <button
-        onClick={async () => {
-          const result = await window.electron.ipcRenderer.invoke('select-image')
-          if (result) {
-            setFile(result)
-          }
-        }}
-      >
-        select image
-      </button>
+      <button onClick={handleSelectImage}>select image</button>
 
-      <button
-        onClick={async () => {
-          const result = await window.electron.ipcRenderer.invoke('remove-background', file)
-          if (result) {
-            setFile(result)
-          }
-        }}
-      >
-        remove background
-      </button>
+      <button onClick={handleRemoveBackground}>remove background</button>
       <Versions></Versions>
     </>
   )
