@@ -1,4 +1,4 @@
-import removeBackground from '@imgly/background-removal-node'
+import { removeBackground } from '@imgly/background-removal-node'
 import path from 'path'
 import fs from 'fs/promises'
 import { dialog } from 'electron'
@@ -33,7 +33,7 @@ export const handleRemoveBackground = async (
 export const handleSelectImage = async (): Promise<string | undefined> => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ['openFile'],
-    filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg'] }]
+    filters: [{ name: 'Images', extensions: ['jpg', 'png', 'jpeg', 'webp'] }]
   })
 
   return filePaths[0]

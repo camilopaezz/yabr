@@ -1,11 +1,17 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { removeBackground } from '@imgly/background-removal-node'
-import fs from 'fs/promises'
-import path from 'path'
 import { handleRemoveBackground, handleSelectImage } from './utils/handlers'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'atom',
+    privileges: {
+      bypassCSP: true
+    }
+  }
+])
 
 function createWindow(): void {
   // Create the browser window.
@@ -43,8 +49,12 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  ipcMain.handle('select-image', handleSelectImage)
+  protocol.handle('atom', (request) => {
+    const filePath = request.url.slice('atom://'.length)
+    return net.fetch(`file://${filePath}`)
+  })
 
+  ipcMain.handle('select-image', handleSelectImage)
   ipcMain.handle('remove-background', handleRemoveBackground)
 
   // Set app user model id for windows
@@ -55,9 +65,6 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
 
   createWindow()
 
