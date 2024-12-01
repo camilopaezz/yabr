@@ -1,8 +1,9 @@
 import Versions from './components/Versions'
 import electronLogo from './assets/electron.svg'
+import { useState } from 'react'
 
 function App(): JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+  const [file, setFile] = useState<undefined | string>(undefined)
 
   return (
     <>
@@ -12,21 +13,28 @@ function App(): JSX.Element {
         Build an Electron app with <span className="react">React</span>
         &nbsp;and <span className="ts">TypeScript</span>
       </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
+      <p>{file}</p>
+      <button
+        onClick={async () => {
+          const result = await window.electron.ipcRenderer.invoke('select-image')
+          if (result) {
+            setFile(result)
+          }
+        }}
+      >
+        select image
+      </button>
+
+      <button
+        onClick={async () => {
+          const result = await window.electron.ipcRenderer.invoke('remove-background', file)
+          if (result) {
+            setFile(result)
+          }
+        }}
+      >
+        remove background
+      </button>
       <Versions></Versions>
     </>
   )
