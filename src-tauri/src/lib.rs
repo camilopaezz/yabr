@@ -1,12 +1,12 @@
-mod commands;
+pub mod commands;
 mod config;
-mod error;
+pub mod error;
 mod events;
 mod gpu;
-mod image_io;
-mod inference;
-mod models;
-mod pipeline;
+pub mod image_io;
+pub mod inference;
+pub mod models;
+pub mod pipeline;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

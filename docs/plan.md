@@ -140,13 +140,19 @@ Mirrored in `src-tauri/src/models.rs` (source of truth) and `src/lib/models.ts` 
 `models.rs` and verified after download. Files live in `<appData>/blablablu/models/`.
 
 **Preprocessing contract per model** (encoded in registry):
-- `u2netp`: resize 320², /255, normalize mean=0.485 std=0.229, NCHW float32.
+- `u2netp`: resize 320² (stretch to square), /255, normalize per-channel ImageNet mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225], NCHW float32.
 - `isnet-general-use`: resize 1024², /255, normalize mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225].
 - `RMBG-1.4`: resize 1024², /255, normalize mean=0.5 std=1.0.
 - `RMBG-2.0`: resize 1024², /255, normalize mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225].
 
-**Postprocessing** is uniform: take last output tensor → sigmoid → resize to original
-HxW → multiply by 255 → uint8 alpha → stack with original RGB → encode PNG.
+**Postprocessing is per-model** (the model's side-output activation is usually baked into the
+ONNX graph; do not re-apply sigmoid unless the model outputs raw logits that require it):
+- `u2netp`: take the **first** output (d0, shape [1,1,320,320]) → min-max normalize over the
+  [H×W] logits → *255 → uint8 mask → resize to original HxW → stack with original RGB →
+  encode PNG. (u2netp's graph already applies sigmoid internally, so min-max — not a second
+  sigmoid — yields a full-range mask. Matches rembg's `U2netpSession.predict`.)
+- `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`: postprocessing finalized in Phase 6 when each
+  model is integrated and validated against reference outputs.
 
 ---
 
