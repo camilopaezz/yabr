@@ -1,5 +1,8 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
+import type { ModelMeta, ModelMode } from "./models";
+
+export type { ModelMeta, ModelMode };
 
 export type RemoveBackgroundArgs = {
   id: string;
@@ -27,6 +30,7 @@ export type InferenceErrorPayload = {
 export const EVENT_PROGRESS = "inference:progress";
 export const EVENT_DONE = "inference:done";
 export const EVENT_ERROR = "inference:error";
+export const EVENT_MODEL_DOWNLOAD = "model:download";
 
 export type GpuInfo = {
   vendor: string;
@@ -50,6 +54,27 @@ export type Config = {
   output_dir: string | null;
   platform: string | null;
 };
+
+export type ModelDownloadPayload = {
+  model_id: string;
+  pct: number;
+};
+
+export function invokeListModels(): Promise<ModelMeta[]> {
+  return tauriInvoke("list_models");
+}
+
+export function invokeDownloadModel(model_id: string): Promise<void> {
+  return tauriInvoke("download_model", { model_id });
+}
+
+export function listenModelDownload(
+  handler: (payload: ModelDownloadPayload) => void,
+): Promise<() => void> {
+  return tauriListen<ModelDownloadPayload>(EVENT_MODEL_DOWNLOAD, (event) =>
+    handler(event.payload),
+  );
+}
 
 export function invokeDetectGpu(): Promise<GpuInfo> {
   return tauriInvoke("detect_gpu");

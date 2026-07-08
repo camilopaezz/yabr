@@ -2,58 +2,86 @@ export type ModelMode = "u2netp" | "isnet-general-use" | "rmbg-1.4" | "rmbg-2.0"
 
 export type ModelMeta = {
   id: ModelMode;
-  label: string;
+  name: string;
   file: string;
-  sizeBytes: number;
-  inputSize: number;
+  size_bytes: number;
+  input_size: number;
+  mean: number[];
+  std: number[];
   license: string;
   source: string;
-  available: boolean;
+  download_url: string;
+  sha256: string;
+  bundled: boolean;
+  downloaded: boolean;
 };
 
-export const MODELS: ModelMeta[] = [
+export const REGISTRY: ModelMeta[] = [
   {
     id: "u2netp",
-    label: "Turbo",
+    name: "Turbo",
     file: "u2netp.onnx",
-    sizeBytes: 4_574_861,
-    inputSize: 320,
+    size_bytes: 4_574_861,
+    input_size: 320,
+    mean: [0.485, 0.456, 0.406],
+    std: [0.229, 0.224, 0.225],
     license: "Apache-2.0",
-    source: "xuebinqin/U-2-Net",
-    available: true,
+    source: "xuebinqin/U-2-Net via rembg",
+    download_url: "",
+    sha256: "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+    bundled: true,
+    downloaded: true,
   },
   {
     id: "isnet-general-use",
-    label: "Balanced",
+    name: "Balanced",
     file: "isnet-general-use.onnx",
-    sizeBytes: 178_000_000,
-    inputSize: 1024,
+    size_bytes: 178_000_000,
+    input_size: 1024,
+    mean: [0.485, 0.456, 0.406],
+    std: [0.229, 0.224, 0.225],
     license: "Apache-2.0",
-    source: "xuebinqin/DIS",
-    available: false,
+    source: "xuebinqin/DIS via rembg",
+    download_url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx",
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+    bundled: false,
+    downloaded: false,
   },
   {
     id: "rmbg-1.4",
-    label: "Balanced+",
+    name: "Balanced+",
     file: "rmbg-1.4.onnx",
-    sizeBytes: 176_000_000,
-    inputSize: 1024,
+    size_bytes: 176_000_000,
+    input_size: 1024,
+    mean: [0.5, 0.5, 0.5],
+    std: [1.0, 1.0, 1.0],
     license: "CC BY-NC 4.0",
     source: "briaai/RMBG-1.4",
-    available: false,
+    download_url: "https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx",
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+    bundled: false,
+    downloaded: false,
   },
   {
     id: "rmbg-2.0",
-    label: "Max Quality",
+    name: "Max Quality",
     file: "rmbg-2.0.onnx",
-    sizeBytes: 173_000_000,
-    inputSize: 1024,
+    size_bytes: 173_000_000,
+    input_size: 1024,
+    mean: [0.485, 0.456, 0.406],
+    std: [0.229, 0.224, 0.225],
     license: "CC BY-NC 4.0",
-    source: "briaai/RMBG-2.0",
-    available: false,
+    source: "briaai/RMBG-2.0 via rembg",
+    download_url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/bria-rmbg-2.0.onnx",
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+    bundled: false,
+    downloaded: false,
   },
 ];
 
-export function getModelById(id: ModelMode): ModelMeta | undefined {
-  return MODELS.find((m) => m.id === id);
+export function getModelById(
+  id: ModelMode,
+  models: ModelMeta[] = REGISTRY,
+): ModelMeta | undefined {
+  return models.find((m) => m.id === id);
 }

@@ -2,30 +2,91 @@ use image::{imageops::FilterType, DynamicImage, GrayImage, RgbaImage};
 use ndarray::{Array4, Axis};
 
 use crate::error::AppError;
-use crate::models::ModelMeta;
+use crate::models::ModelEntry;
 
-pub fn preprocess(model: &ModelMeta, image: &DynamicImage) -> Result<Array4<f32>, AppError> {
+pub fn preprocess(model: &ModelEntry, image: &DynamicImage) -> Result<Array4<f32>, AppError> {
     let size = model.input_size;
     let resized = image.resize_exact(size, size, FilterType::Lanczos3);
     let rgb = resized.to_rgb8();
-    let pixel_max = rgb
-        .pixels()
-        .map(|p| p[0].max(p[1]).max(p[2]) as f32)
-        .fold(0.0f32, f32::max)
-        .max(1e-6);
     let mut tensor = Array4::<f32>::zeros([1, 3, size as usize, size as usize]);
     for (x, y, pix) in rgb.enumerate_pixels() {
         for c in 0..3 {
-            let v = pix[c] as f32 / pixel_max;
-            let mean = model.mean.get(c).copied().unwrap_or(0.0);
-            let std = model.std.get(c).copied().unwrap_or(1.0);
+            let v = pix[c] as f32 / 255.0;
+            let mean = if model.mean.len() == 1 {
+                model.mean[0]
+            } else {
+                model.mean.get(c).copied().unwrap_or(0.0)
+            };
+            let std = if model.std.len() == 1 {
+                model.std[0]
+            } else {
+                model.std.get(c).copied().unwrap_or(1.0)
+            };
             tensor[[0, c, y as usize, x as usize]] = (v - mean) / std;
         }
     }
     Ok(tensor)
 }
 
-pub fn postprocess(original_size: (u32, u32), output: &ndarray::ArrayD<f32>) -> Result<GrayImage, AppError> {
+pub fn postprocess(
+    model_id: &str,
+    original_size: (u32, u32),
+    output: &ndarray::ArrayD<f32>,
+) -> Result<GrayImage, AppError> {
+    match model_id {
+        "u2netp" => postprocess_u2netp(original_size, output),
+        "isnet-general-use" | "rmbg-1.4" | "rmbg-2.0" => {
+            postprocess_sigmoid(original_size, output)
+        }
+        _ => Err(AppError::Pipeline(format!(
+            "unknown postprocess model_id {}",
+            model_id
+        ))),
+    }
+}
+
+fn postprocess_u2netp(
+    original_size: (u32, u32),
+    output: &ndarray::ArrayD<f32>,
+) -> Result<GrayImage, AppError> {
+    let (h, w, logits) = extract_logits(output)?;
+    let min = logits.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let range = max - min;
+    let mut mask = GrayImage::new(w as u32, h as u32);
+    for y in 0..h {
+        for x in 0..w {
+            let v = logits[y * w + x];
+            let n = if range == 0.0 { 0.0 } else { (v - min) / range };
+            let p = (n * 255.0).round() as u8;
+            mask.put_pixel(x as u32, y as u32, image::Luma([p]));
+        }
+    }
+    let resized =
+        image::imageops::resize(&mask, original_size.0, original_size.1, FilterType::Lanczos3);
+    Ok(resized)
+}
+
+fn postprocess_sigmoid(
+    original_size: (u32, u32),
+    output: &ndarray::ArrayD<f32>,
+) -> Result<GrayImage, AppError> {
+    let (h, w, logits) = extract_logits(output)?;
+    let mut mask = GrayImage::new(w as u32, h as u32);
+    for y in 0..h {
+        for x in 0..w {
+            let v = logits[y * w + x];
+            let sig = 1.0 / (1.0 + (-v).exp());
+            let p = (sig * 255.0).round() as u8;
+            mask.put_pixel(x as u32, y as u32, image::Luma([p]));
+        }
+    }
+    let resized =
+        image::imageops::resize(&mask, original_size.0, original_size.1, FilterType::Lanczos3);
+    Ok(resized)
+}
+
+fn extract_logits(output: &ndarray::ArrayD<f32>) -> Result<(usize, usize, Vec<f32>), AppError> {
     let shape = output.shape();
     if shape.len() != 4 || shape[0] != 1 || shape[1] != 1 {
         return Err(AppError::Pipeline(format!(
@@ -41,24 +102,7 @@ pub fn postprocess(original_size: (u32, u32), output: &ndarray::ArrayD<f32>) -> 
         .iter()
         .copied()
         .collect();
-    let min = logits.iter().copied().fold(f32::INFINITY, f32::min);
-    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let range = max - min;
-    let mut mask = GrayImage::new(w as u32, h as u32);
-    for y in 0..h {
-        for x in 0..w {
-            let v = logits[y * w + x];
-            let n = if range == 0.0 {
-                0.0
-            } else {
-                (v - min) / range
-            };
-            let p = (n * 255.0).round() as u8;
-            mask.put_pixel(x as u32, y as u32, image::Luma([p]));
-        }
-    }
-    let resized = image::imageops::resize(&mask, original_size.0, original_size.1, FilterType::Lanczos3);
-    Ok(resized)
+    Ok((h, w, logits))
 }
 
 pub fn apply_alpha(rgb: &image::RgbImage, alpha: &GrayImage) -> Result<RgbaImage, AppError> {
@@ -81,12 +125,11 @@ pub fn apply_alpha(rgb: &image::RgbImage, alpha: &GrayImage) -> Result<RgbaImage
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::list_models;
+    use crate::models::find_model;
 
     #[test]
     fn preprocess_shape_and_red_channel_value() {
-        let models = list_models().unwrap();
-        let u2netp = models.iter().find(|m| m.id == "u2netp").unwrap();
+        let u2netp = find_model("u2netp").unwrap();
         let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
             64,
             64,
@@ -99,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn postprocess_min_max_normalization() {
+    fn postprocess_u2netp_min_max_normalization() {
         let mut data = Vec::with_capacity(32 * 32);
         for y in 0..32 {
             for x in 0..32 {
@@ -109,7 +152,7 @@ mod tests {
             }
         }
         let output = ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 1, 32, 32]), data).unwrap();
-        let mask = postprocess((32, 32), &output).unwrap();
+        let mask = postprocess("u2netp", (32, 32), &output).unwrap();
         assert_eq!(mask.dimensions(), (32, 32));
         let min_pixel = mask.pixels().map(|p| p[0]).min().unwrap();
         let max_pixel = mask.pixels().map(|p| p[0]).max().unwrap();
@@ -126,12 +169,39 @@ mod tests {
             vec![0.5f32; 4],
         )
         .unwrap();
-        let mask = postprocess((2, 2), &output).unwrap();
+        let mask = postprocess("u2netp", (2, 2), &output).unwrap();
         assert_eq!(mask.dimensions(), (2, 2));
         for y in 0..2 {
             for x in 0..2 {
                 assert_eq!(mask.get_pixel(x, y)[0], 0);
             }
         }
+    }
+
+    #[test]
+    fn postprocess_rmbg_uses_sigmoid() {
+        // Large positive logits should approach 255, large negative should approach 0.
+        let output = ndarray::ArrayD::from_shape_vec(
+            ndarray::IxDyn(&[1, 1, 2, 2]),
+            vec![10.0f32, -10.0f32, 0.0f32, 0.0f32],
+        )
+        .unwrap();
+        let mask = postprocess("rmbg-1.4", (2, 2), &output).unwrap();
+        assert_eq!(mask.dimensions(), (2, 2));
+        assert_eq!(mask.get_pixel(0, 0)[0], 255);
+        assert_eq!(mask.get_pixel(1, 0)[0], 0);
+        let mid = mask.get_pixel(0, 1)[0];
+        assert!((mid as i16 - 128).abs() <= 2);
+    }
+
+    #[test]
+    fn postprocess_unknown_model_returns_error() {
+        let output = ndarray::ArrayD::from_shape_vec(
+            ndarray::IxDyn(&[1, 1, 2, 2]),
+            vec![0.0f32; 4],
+        )
+        .unwrap();
+        let result = postprocess("unknown", (2, 2), &output);
+        assert!(result.is_err());
     }
 }

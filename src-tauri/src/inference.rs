@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use ndarray::Array4;
@@ -14,7 +15,7 @@ pub const EP_CUDA: &str = "cuda";
 
 pub static U2NETP_MODEL_BYTES: &[u8] = include_bytes!("../models/u2netp.onnx");
 
-static U2NETP_SESSION: Mutex<Option<(String, Session)>> = Mutex::new(None);
+static SESSION_CACHE: Mutex<Option<HashMap<(String, String), Session>>> = Mutex::new(None);
 
 pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, AppError> {
     let mut providers: Vec<ExecutionProviderDispatch> = Vec::new();
@@ -45,29 +46,30 @@ pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, 
         .map_err(|e| AppError::Inference(e.to_string()))
 }
 
-pub fn invalidate_session() -> Result<(), AppError> {
-    let mut guard = U2NETP_SESSION
+pub fn invalidate_all_sessions() -> Result<(), AppError> {
+    let mut guard = SESSION_CACHE
         .lock()
         .map_err(|e| AppError::Inference(e.to_string()))?;
     *guard = None;
     Ok(())
 }
 
-pub fn run_u2netp_session<F, R>(ep: &str, f: F) -> Result<R, AppError>
+pub fn with_session<F, R>(model_id: &str, ep: &str, model_bytes: &[u8], f: F) -> Result<R, AppError>
 where
     F: FnOnce(&mut Session) -> Result<R, AppError>,
 {
-    let mut guard = U2NETP_SESSION
+    let mut guard = SESSION_CACHE
         .lock()
         .map_err(|e| AppError::Inference(e.to_string()))?;
-    if guard
-        .as_ref()
-        .map(|(cached_ep, _)| cached_ep != ep)
-        .unwrap_or(true)
-    {
-        *guard = Some((ep.to_string(), load_session_from_bytes(U2NETP_MODEL_BYTES, ep)?));
+    let cache = guard.get_or_insert_with(HashMap::new);
+    let key = (model_id.to_string(), ep.to_string());
+    if !cache.contains_key(&key) {
+        let session = load_session_from_bytes(model_bytes, ep)?;
+        cache.insert(key.clone(), session);
     }
-    let (_, session) = guard.as_mut().unwrap();
+    let session = cache
+        .get_mut(&key)
+        .ok_or_else(|| AppError::Inference("session missing from cache".to_string()))?;
     f(session)
 }
 
@@ -109,5 +111,22 @@ mod tests {
     fn directml_ep_loads() {
         let session = load_session_from_bytes(U2NETP_MODEL_BYTES, EP_DIRECTML).unwrap();
         assert_eq!(session.inputs().len(), 1);
+    }
+
+    #[test]
+    fn session_cache_keyed_by_model_and_ep() {
+        let _ = invalidate_all_sessions();
+        let r1 = with_session("u2netp", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+            Ok(session.inputs().len())
+        });
+        let r2 = with_session("u2netp", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+            Ok(session.inputs().len())
+        });
+        let r3 = with_session("isnet-stub", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+            Ok(session.inputs().len())
+        });
+        assert_eq!(r1.unwrap(), 1);
+        assert_eq!(r2.unwrap(), 1);
+        assert_eq!(r3.unwrap(), 1);
     }
 }

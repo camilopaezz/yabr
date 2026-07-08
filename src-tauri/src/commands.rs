@@ -50,18 +50,18 @@ pub async fn set_ep(app: AppHandle, ep: String) -> Result<(), AppError> {
     let mut config = crate::config::load_config(&app)?;
     config.execution_provider = Some(normalized);
     crate::config::save_config(&app, &config)?;
-    crate::inference::invalidate_session()?;
+    crate::inference::invalidate_all_sessions()?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn list_models() -> Result<Vec<ModelMeta>, AppError> {
-    crate::models::list_models()
+pub async fn list_models(app: AppHandle) -> Result<Vec<ModelMeta>, AppError> {
+    crate::models::list_models(&app)
 }
 
 #[tauri::command]
-pub async fn download_model(model_id: String) -> Result<(), AppError> {
-    crate::models::download_model(&model_id)
+pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), AppError> {
+    crate::models::download_model(&app, &model_id).await
 }
 
 #[tauri::command]
@@ -69,26 +69,22 @@ pub async fn remove_image_background(
     app: AppHandle,
     args: RemoveBackgroundArgs,
 ) -> Result<(), AppError> {
-    if args.model_id != "u2netp" {
-        let err = AppError::Model(format!("model '{}' is not available yet", args.model_id));
-        let _ = app.emit(
-            INFERENCE_ERROR,
-            InferenceErrorPayload {
-                id: args.id.clone(),
-                message: err.to_string(),
-            },
-        );
-        return Err(err);
-    }
-
     let id = args.id;
     let input_path = args.input_path;
     let output_path = args.output_path;
+    let model_id = args.model_id;
     let app_for_run = app.clone();
     let ep = crate::config::load_config(&app)?.execution_provider();
 
     thread::spawn(move || {
-        if let Err(err) = run_inference(app_for_run, id.clone(), input_path, output_path.clone(), &ep) {
+        if let Err(err) = run_inference(
+            app_for_run,
+            id.clone(),
+            input_path,
+            output_path.clone(),
+            model_id,
+            &ep,
+        ) {
             let _ = app.emit(
                 INFERENCE_ERROR,
                 InferenceErrorPayload {
@@ -107,6 +103,7 @@ fn run_inference(
     id: String,
     input_path: String,
     output_path: String,
+    model_id: String,
     ep: &str,
 ) -> Result<(), AppError> {
     let emit_progress = |stage: &str, pct: f32| -> Result<(), AppError> {
@@ -121,6 +118,17 @@ fn run_inference(
         .map_err(|e| AppError::Inference(e.to_string()))
     };
 
+    let model = crate::models::find_model(&model_id)?;
+    if !model.bundled {
+        let cache_path = crate::models::model_cache_path(&app, model)?;
+        if !cache_path.exists() {
+            return Err(AppError::Model(format!(
+                "model '{}' is not downloaded",
+                model_id
+            )));
+        }
+    }
+
     emit_progress("decoding", 10.0)?;
     let image_bytes = std::fs::read(&input_path)?;
     let img = crate::image_io::decode(&image_bytes)?;
@@ -128,20 +136,20 @@ fn run_inference(
     let rgb = img.to_rgb8();
 
     emit_progress("preprocessing", 20.0)?;
-    let models = crate::models::list_models()?;
-    let u2netp = models
-        .into_iter()
-        .find(|m| m.id == "u2netp")
-        .ok_or_else(|| AppError::Model("u2netp not found in registry".to_string()))?;
-    let tensor = crate::pipeline::preprocess(&u2netp, &img)?;
+    let tensor = crate::pipeline::preprocess(model, &img)?;
 
     emit_progress("inferring", 50.0)?;
-    let output = crate::inference::run_u2netp_session(ep, |session| {
+    let model_bytes = if model.bundled {
+        crate::inference::U2NETP_MODEL_BYTES.to_vec()
+    } else {
+        std::fs::read(crate::models::model_cache_path(&app, model)?)?
+    };
+    let output = crate::inference::with_session(&model_id, ep, &model_bytes, |session| {
         crate::inference::run(session, &tensor)
     })?;
 
     emit_progress("postprocessing", 80.0)?;
-    let alpha = crate::pipeline::postprocess(original_size, &output)?;
+    let alpha = crate::pipeline::postprocess(&model_id, original_size, &output)?;
 
     emit_progress("encoding", 95.0)?;
     let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;

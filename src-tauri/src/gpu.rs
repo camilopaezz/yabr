@@ -187,12 +187,8 @@ pub fn run_benchmark(app: &AppHandle) -> Result<BenchmarkResult, AppError> {
     ));
     let original_size = (64, 64);
 
-    let models = crate::models::list_models()?;
-    let u2netp = models
-        .into_iter()
-        .find(|m| m.id == "u2netp")
-        .ok_or_else(|| AppError::Model("u2netp not found in registry".to_string()))?;
-    let tensor = crate::pipeline::preprocess(&u2netp, &img)?;
+    let u2netp = crate::models::find_model("u2netp")?;
+    let tensor = crate::pipeline::preprocess(u2netp, &img)?;
 
     let mut ep_latencies = Vec::new();
     // If the requested EP runtime is not installed, ORT silently falls back to CPU.
@@ -200,10 +196,10 @@ pub fn run_benchmark(app: &AppHandle) -> Result<BenchmarkResult, AppError> {
         let mut session =
             crate::inference::load_session_from_bytes(crate::inference::U2NETP_MODEL_BYTES, &ep)?;
         let _warmup = crate::inference::run(&mut session, &tensor)?;
-        let _warmup_alpha = crate::pipeline::postprocess(original_size, &_warmup)?;
+        let _warmup_alpha = crate::pipeline::postprocess("u2netp", original_size, &_warmup)?;
         let start = Instant::now();
         let output = crate::inference::run(&mut session, &tensor)?;
-        let _alpha = crate::pipeline::postprocess(original_size, &output)?;
+        let _alpha = crate::pipeline::postprocess("u2netp", original_size, &output)?;
         let seconds = start.elapsed().as_secs_f64();
         ep_latencies.push(EpLatency {
             ep: ep.clone(),
@@ -231,7 +227,7 @@ fn persist_ep(app: &AppHandle, ep: &str) -> Result<(), AppError> {
     config.execution_provider = Some(normalized);
     config.platform = Some(std::env::consts::OS.to_string());
     crate::config::save_config(app, &config)?;
-    crate::inference::invalidate_session()?;
+    crate::inference::invalidate_all_sessions()?;
     Ok(())
 }
 
@@ -275,19 +271,18 @@ mod tests {
             64,
             image::Rgb([128, 128, 128]),
         ));
-        let models = crate::models::list_models().unwrap();
-        let u2netp = models.into_iter().find(|m| m.id == "u2netp").unwrap();
-        let tensor = crate::pipeline::preprocess(&u2netp, &img).unwrap();
+        let u2netp = crate::models::find_model("u2netp").unwrap();
+        let tensor = crate::pipeline::preprocess(u2netp, &img).unwrap();
 
         for ep in &info.available_eps {
             let mut session =
                 crate::inference::load_session_from_bytes(crate::inference::U2NETP_MODEL_BYTES, ep)
                     .unwrap();
             let _warmup = crate::inference::run(&mut session, &tensor).unwrap();
-            let _warmup_alpha = crate::pipeline::postprocess((64, 64), &_warmup).unwrap();
+            let _warmup_alpha = crate::pipeline::postprocess("u2netp", (64, 64), &_warmup).unwrap();
             let start = Instant::now();
             let output = crate::inference::run(&mut session, &tensor).unwrap();
-            let _alpha = crate::pipeline::postprocess((64, 64), &output).unwrap();
+            let _alpha = crate::pipeline::postprocess("u2netp", (64, 64), &output).unwrap();
             println!("benchmark {}: {}s", ep, start.elapsed().as_secs_f64());
         }
     }
