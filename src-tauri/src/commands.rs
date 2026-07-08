@@ -31,8 +31,21 @@ pub async fn run_benchmark() -> Result<BenchmarkResult, AppError> {
 }
 
 #[tauri::command]
-pub async fn set_ep(ep: String) -> Result<(), AppError> {
-    let _ = ep;
+pub async fn set_ep(app: AppHandle, ep: String) -> Result<(), AppError> {
+    let normalized = ep.to_lowercase();
+    if !matches!(
+        normalized.as_str(),
+        crate::inference::EP_CPU | crate::inference::EP_DIRECTML | crate::inference::EP_CUDA
+    ) {
+        return Err(AppError::Config(format!(
+            "unknown execution provider: {}",
+            ep
+        )));
+    }
+    let mut config = crate::config::load_config(&app)?;
+    config.execution_provider = Some(normalized);
+    crate::config::save_config(&app, &config)?;
+    crate::inference::invalidate_session()?;
     Ok(())
 }
 
@@ -67,9 +80,10 @@ pub async fn remove_image_background(
     let input_path = args.input_path;
     let output_path = args.output_path;
     let app_for_run = app.clone();
+    let ep = crate::config::load_config(&app)?.execution_provider();
 
     thread::spawn(move || {
-        if let Err(err) = run_inference(app_for_run, id.clone(), input_path, output_path.clone()) {
+        if let Err(err) = run_inference(app_for_run, id.clone(), input_path, output_path.clone(), &ep) {
             let _ = app.emit(
                 INFERENCE_ERROR,
                 InferenceErrorPayload {
@@ -88,6 +102,7 @@ fn run_inference(
     id: String,
     input_path: String,
     output_path: String,
+    ep: &str,
 ) -> Result<(), AppError> {
     let emit_progress = |stage: &str, pct: f32| -> Result<(), AppError> {
         app.emit(
@@ -116,8 +131,9 @@ fn run_inference(
     let tensor = crate::pipeline::preprocess(&u2netp, &img)?;
 
     emit_progress("inferring", 50.0)?;
-    let mut session = crate::inference::get_u2netp_session()?;
-    let output = crate::inference::run(&mut session, &tensor)?;
+    let output = crate::inference::run_u2netp_session(ep, |session| {
+        crate::inference::run(session, &tensor)
+    })?;
 
     emit_progress("postprocessing", 80.0)?;
     let alpha = crate::pipeline::postprocess(original_size, &output)?;
@@ -149,12 +165,11 @@ pub async fn pick_output_dir() -> Result<Option<String>, AppError> {
 }
 
 #[tauri::command]
-pub async fn get_config() -> Result<Config, AppError> {
-    Ok(Config::default())
+pub async fn get_config(app: AppHandle) -> Result<Config, AppError> {
+    crate::config::load_config(&app)
 }
 
 #[tauri::command]
-pub async fn set_config(config: Config) -> Result<(), AppError> {
-    let _ = config;
-    Ok(())
+pub async fn set_config(app: AppHandle, config: Config) -> Result<(), AppError> {
+    crate::config::save_config(&app, &config)
 }

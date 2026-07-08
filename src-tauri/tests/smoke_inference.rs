@@ -16,7 +16,7 @@ fn u2netp_smoke_iou() {
     let u2netp = models.iter().find(|m| m.id == "u2netp").unwrap();
     let tensor = pipeline::preprocess(u2netp, &image).unwrap();
 
-    let mut session = inference::load_session_from_bytes(inference::U2NETP_MODEL_BYTES).unwrap();
+    let mut session = inference::load_session_from_bytes(inference::U2NETP_MODEL_BYTES, "cpu").unwrap();
     let output = inference::run(&mut session, &tensor).unwrap();
     let alpha = pipeline::postprocess(original_size, &output).unwrap();
 

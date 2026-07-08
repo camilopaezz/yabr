@@ -21,9 +21,14 @@ tauri-plugin-dialog = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2"
-ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 imageproc = { version = "0.27.0", default-features = false }
 ndarray = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[target.'cfg(windows)'.dependencies]
+ort = { version = "2.0.0-rc.12", features = ["directml", "download-binaries"] }
+
+[target.'cfg(not(windows))'.dependencies]
+ort = { version = "2.0.0-rc.12", features = ["cuda", "download-binaries"] }
 
