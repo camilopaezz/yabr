@@ -100,6 +100,10 @@ export function invokeRemoveImageBackground(args: RemoveBackgroundArgs): Promise
   return tauriInvoke("remove_image_background", args);
 }
 
+export function invokeCancelBatch(): Promise<void> {
+  return tauriInvoke("cancel_batch");
+}
+
 export function listenInferenceProgress(
   handler: (payload: InferenceProgressPayload) => void,
 ): Promise<() => void> {

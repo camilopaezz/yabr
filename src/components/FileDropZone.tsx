@@ -50,8 +50,6 @@ export function FileDropZone() {
         error: null,
       });
 
-      batchStore.getState().updateItem(id, { status: "processing" });
-
       invokeRemoveImageBackground({
         id,
         inputPath,

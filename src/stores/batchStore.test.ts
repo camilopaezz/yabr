@@ -54,4 +54,16 @@ describe("batchStore", () => {
     batchStore.getState().clear();
     expect(batchStore.getState().items).toHaveLength(0);
   });
+
+  it("marks queued and processing items as cancelled", () => {
+    batchStore.getState().addItem(makeItem({ id: "a", status: "queued" }));
+    batchStore.getState().addItem(makeItem({ id: "b", status: "processing" }));
+    batchStore.getState().addItem(makeItem({ id: "c", status: "done" }));
+    batchStore.getState().addItem(makeItem({ id: "d", status: "error" }));
+    batchStore.getState().markAllCancelled();
+    expect(batchStore.getState().items[0].status).toBe("cancelled");
+    expect(batchStore.getState().items[1].status).toBe("cancelled");
+    expect(batchStore.getState().items[2].status).toBe("done");
+    expect(batchStore.getState().items[3].status).toBe("error");
+  });
 });

@@ -89,4 +89,27 @@ describe("progressStore", () => {
     expect(item.error).toBe("out of memory");
     expect(item.stage).toBeNull();
   });
+
+  it("sets cancelled status when error message is cancelled", async () => {
+    batchStore.getState().addItem({
+      id: "img-4",
+      inputPath: "/tmp/in.png",
+      outputPath: null,
+      status: "processing",
+      progress: 20,
+      stage: "decoding",
+      error: null,
+    });
+
+    await initEventListeners();
+
+    handlers["inference:error"]({
+      payload: { id: "img-4", message: "cancelled" },
+    });
+
+    const item = batchStore.getState().items[0];
+    expect(item.status).toBe("cancelled");
+    expect(item.error).toBeNull();
+    expect(item.stage).toBeNull();
+  });
 });

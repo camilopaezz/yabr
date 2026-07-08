@@ -1,13 +1,10 @@
-use std::thread;
+use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, State};
 
+use crate::batch::{BatchJob, BatchState};
 use crate::config::Config;
 use crate::error::AppError;
-use crate::events::{
-    InferenceDonePayload, InferenceErrorPayload, InferenceProgressPayload, INFERENCE_DONE,
-    INFERENCE_ERROR, INFERENCE_PROGRESS,
-};
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::models::ModelMeta;
 
@@ -66,109 +63,21 @@ pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), AppE
 
 #[tauri::command]
 pub async fn remove_image_background(
-    app: AppHandle,
+    state: State<'_, Arc<BatchState>>,
     args: RemoveBackgroundArgs,
 ) -> Result<(), AppError> {
-    let id = args.id;
-    let input_path = args.input_path;
-    let output_path = args.output_path;
-    let model_id = args.model_id;
-    let app_for_run = app.clone();
-    let ep = crate::config::load_config(&app)?.execution_provider();
-
-    thread::spawn(move || {
-        if let Err(err) = run_inference(
-            app_for_run,
-            id.clone(),
-            input_path,
-            output_path.clone(),
-            model_id,
-            &ep,
-        ) {
-            let _ = app.emit(
-                INFERENCE_ERROR,
-                InferenceErrorPayload {
-                    id,
-                    message: err.to_string(),
-                },
-            );
-        }
+    state.enqueue(BatchJob {
+        id: args.id,
+        input_path: args.input_path,
+        output_path: args.output_path,
+        model_id: args.model_id,
     });
-
-    Ok(())
-}
-
-fn run_inference(
-    app: AppHandle,
-    id: String,
-    input_path: String,
-    output_path: String,
-    model_id: String,
-    ep: &str,
-) -> Result<(), AppError> {
-    let emit_progress = |stage: &str, pct: f32| -> Result<(), AppError> {
-        app.emit(
-            INFERENCE_PROGRESS,
-            InferenceProgressPayload {
-                id: id.clone(),
-                stage: stage.to_string(),
-                pct,
-            },
-        )
-        .map_err(|e| AppError::Inference(e.to_string()))
-    };
-
-    let model = crate::models::find_model(&model_id)?;
-    if !model.bundled {
-        let cache_path = crate::models::model_cache_path(&app, model)?;
-        if !cache_path.exists() {
-            return Err(AppError::Model(format!(
-                "model '{}' is not downloaded",
-                model_id
-            )));
-        }
-    }
-
-    emit_progress("decoding", 10.0)?;
-    let image_bytes = std::fs::read(&input_path)?;
-    let img = crate::image_io::decode(&image_bytes)?;
-    let original_size = (img.width(), img.height());
-    let rgb = img.to_rgb8();
-
-    emit_progress("preprocessing", 20.0)?;
-    let tensor = crate::pipeline::preprocess(model, &img)?;
-
-    emit_progress("inferring", 50.0)?;
-    let model_bytes = if model.bundled {
-        crate::inference::U2NETP_MODEL_BYTES.to_vec()
-    } else {
-        std::fs::read(crate::models::model_cache_path(&app, model)?)?
-    };
-    let output = crate::inference::with_session(&model_id, ep, &model_bytes, |session| {
-        crate::inference::run(session, &tensor)
-    })?;
-
-    emit_progress("postprocessing", 80.0)?;
-    let alpha = crate::pipeline::postprocess(&model_id, original_size, &output)?;
-
-    emit_progress("encoding", 95.0)?;
-    let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;
-    std::fs::write(&output_path, output_bytes)?;
-
-    app.emit(
-        INFERENCE_DONE,
-        InferenceDonePayload {
-            id: id.clone(),
-            output_path,
-        },
-    )
-    .map_err(|e| AppError::Inference(e.to_string()))?;
-
     Ok(())
 }
 
 #[tauri::command]
-pub async fn cancel_batch() -> Result<(), AppError> {
+pub async fn cancel_batch(state: State<'_, Arc<BatchState>>) -> Result<(), AppError> {
+    state.cancel();
     Ok(())
 }
 

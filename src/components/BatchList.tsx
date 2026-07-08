@@ -1,5 +1,6 @@
 import { useBatchStore, type BatchItem } from "../stores/batchStore";
 import { ProgressBar } from "./ProgressBar";
+import { invokeCancelBatch } from "../lib/tauri";
 
 export type BatchListProps = {
   selectedId: string | null;
@@ -26,6 +27,16 @@ function statusLabel(item: BatchItem): string {
 export function BatchList({ selectedId, onSelect }: BatchListProps) {
   const items = useBatchStore((state) => state.items);
   const removeItem = useBatchStore((state) => state.removeItem);
+  const markAllCancelled = useBatchStore((state) => state.markAllCancelled);
+
+  const handleCancel = () => {
+    markAllCancelled();
+    invokeCancelBatch().catch(() => {});
+  };
+
+  const canCancel = items.some(
+    (item) => item.status === "queued" || item.status === "processing",
+  );
 
   if (items.length === 0) {
     return (
@@ -36,72 +47,81 @@ export function BatchList({ selectedId, onSelect }: BatchListProps) {
   }
 
   return (
-    <ul
-      style={{
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      {items.map((item) => (
-        <li
-          key={item.id}
-          onClick={() => onSelect(item.id)}
-          style={{
-            padding: 12,
-            borderRadius: 8,
-            border: `1px solid ${selectedId === item.id ? "#396cd8" : "rgba(128, 128, 128, 0.3)"}`,
-            backgroundColor:
-              selectedId === item.id ? "rgba(57, 108, 216, 0.08)" : "transparent",
-            cursor: "pointer",
-          }}
-        >
-          <div
+    <div>
+      {canCancel && (
+        <div style={{ marginBottom: 12 }}>
+          <button onClick={handleCancel} style={{ width: "100%" }}>
+            Cancel batch
+          </button>
+        </div>
+      )}
+      <ul
+        style={{
+          listStyle: "none",
+          margin: 0,
+          padding: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        {items.map((item) => (
+          <li
+            key={item.id}
+            onClick={() => onSelect(item.id)}
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
+              padding: 12,
+              borderRadius: 8,
+              border: `1px solid ${selectedId === item.id ? "#396cd8" : "rgba(128, 128, 128, 0.3)"}`,
+              backgroundColor:
+                selectedId === item.id ? "rgba(57, 108, 216, 0.08)" : "transparent",
+              cursor: "pointer",
             }}
           >
-            <span
+            <div
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                flex: 1,
-                fontSize: "0.9rem",
-              }}
-              title={item.inputPath}
-            >
-              {item.inputPath.split(/[\\/]/).pop() ?? item.inputPath}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                removeItem(item.id);
-              }}
-              style={{
-                marginLeft: 8,
-                padding: "2px 8px",
-                fontSize: "0.75rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
               }}
             >
-              Remove
-            </button>
-          </div>
-          {item.status === "processing" && (
-            <ProgressBar stage={item.stage} progress={item.progress} />
-          )}
-          <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: 4 }}>
-            {statusLabel(item)}
-            {item.error && `: ${item.error}`}
-          </div>
-        </li>
-      ))}
-    </ul>
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                  fontSize: "0.9rem",
+                }}
+                title={item.inputPath}
+              >
+                {item.inputPath.split(/[\\/]/).pop() ?? item.inputPath}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeItem(item.id);
+                }}
+                style={{
+                  marginLeft: 8,
+                  padding: "2px 8px",
+                  fontSize: "0.75rem",
+                }}
+              >
+                Remove
+              </button>
+            </div>
+            {item.status === "processing" && (
+              <ProgressBar stage={item.stage} progress={item.progress} />
+            )}
+            <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: 4 }}>
+              {statusLabel(item)}
+              {item.error && `: ${item.error}`}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

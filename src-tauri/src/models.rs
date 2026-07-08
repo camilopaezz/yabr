@@ -320,22 +320,22 @@ mod tests {
         hex::encode(hasher.finalize())
     }
 
-    fn spawn_local_server(body: Vec<u8>) -> (std::thread::JoinHandle<()>, u16) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    async fn spawn_local_server(body: Vec<u8>) -> (tokio::task::AbortHandle, u16) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let handle = std::thread::spawn(move || {
-            if let Some(stream) = listener.incoming().next() {
-                let mut stream = stream.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\n\r\n",
-                    body.len()
-                );
-                use std::io::Write;
-                stream.write_all(response.as_bytes()).unwrap();
-                stream.write_all(&body).unwrap();
-            }
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            use tokio::io::AsyncWriteExt;
+            stream.write_all(response.as_bytes()).await.unwrap();
+            stream.write_all(&body).await.unwrap();
+            stream.flush().await.unwrap();
+            let _ = stream.shutdown().await;
         });
-        (handle, port)
+        (handle.abort_handle(), port)
     }
 
     #[test]
@@ -394,8 +394,7 @@ mod tests {
     async fn download_to_file_fetches_and_verifies_sha256() {
         let data = b"hello yabr";
         let expected_hash = compute_sha256(data);
-        let (handle, port) = spawn_local_server(data.to_vec());
-        std::thread::sleep(Duration::from_millis(50));
+        let (handle, port) = spawn_local_server(data.to_vec()).await;
         let model = ModelEntry {
             id: "test".into(),
             name: "Test".into(),
@@ -419,14 +418,13 @@ mod tests {
         assert!(path.exists());
         assert_eq!(sha256_file(&path).unwrap(), expected_hash);
         assert!(progress_values.iter().any(|&p| p > 0.0));
-        handle.join().unwrap();
+        handle.abort();
     }
 
     #[tokio::test]
     async fn download_to_file_skips_verification_for_placeholder() {
         let data = b"tiny";
-        let (handle, port) = spawn_local_server(data.to_vec());
-        std::thread::sleep(Duration::from_millis(50));
+        let (handle, port) = spawn_local_server(data.to_vec()).await;
         let model = ModelEntry {
             id: "test".into(),
             name: "Test".into(),
@@ -447,14 +445,13 @@ mod tests {
             .await
             .unwrap();
         assert!(path.exists());
-        handle.join().unwrap();
+        handle.abort();
     }
 
     #[tokio::test]
     async fn download_to_file_fails_on_sha_mismatch() {
         let data = b"hello yabr";
-        let (handle, port) = spawn_local_server(data.to_vec());
-        std::thread::sleep(Duration::from_millis(50));
+        let (handle, port) = spawn_local_server(data.to_vec()).await;
         let model = ModelEntry {
             id: "test".into(),
             name: "Test".into(),
@@ -474,6 +471,6 @@ mod tests {
         let result = download_to_file(&model, &path, |_| {}).await;
         assert!(result.is_err());
         assert!(!path.exists());
-        handle.join().unwrap();
+        handle.abort();
     }
 }

@@ -1,3 +1,8 @@
+use std::sync::Arc;
+
+use tauri::Manager;
+
+pub mod batch;
 pub mod commands;
 mod config;
 pub mod error;
@@ -14,6 +19,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(crate::batch::BatchState::new())
+        .setup(|app| {
+            let state = app.state::<Arc<crate::batch::BatchState>>();
+            crate::batch::start_worker(app.handle().clone(), state.inner().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::detect_gpu,
             commands::run_benchmark,

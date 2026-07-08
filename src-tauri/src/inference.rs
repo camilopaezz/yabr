@@ -49,7 +49,7 @@ pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, 
 pub fn invalidate_all_sessions() -> Result<(), AppError> {
     let mut guard = SESSION_CACHE
         .lock()
-        .map_err(|e| AppError::Inference(e.to_string()))?;
+        .unwrap_or_else(|e| e.into_inner());
     *guard = None;
     Ok(())
 }
@@ -60,7 +60,7 @@ where
 {
     let mut guard = SESSION_CACHE
         .lock()
-        .map_err(|e| AppError::Inference(e.to_string()))?;
+        .unwrap_or_else(|e| e.into_inner());
     let cache = guard.get_or_insert_with(HashMap::new);
     let key = (model_id.to_string(), ep.to_string());
     if !cache.contains_key(&key) {

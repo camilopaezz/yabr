@@ -22,6 +22,7 @@ export type BatchActions = {
   updateItem: (id: string, patch: Partial<BatchItem>) => void;
   removeItem: (id: string) => void;
   clear: () => void;
+  markAllCancelled: () => void;
 };
 
 export const batchStore = createStore<BatchState & BatchActions>((set) => ({
@@ -38,6 +39,14 @@ export const batchStore = createStore<BatchState & BatchActions>((set) => ({
       items: state.items.filter((item) => item.id !== id),
     })),
   clear: () => set({ items: [] }),
+  markAllCancelled: () =>
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.status === "queued" || item.status === "processing"
+          ? { ...item, status: "cancelled", stage: null, error: null }
+          : item,
+      ),
+    })),
 }));
 
 export function useBatchStore(): BatchState & BatchActions;

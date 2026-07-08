@@ -29,10 +29,11 @@ export async function initEventListeners(): Promise<() => void> {
   });
 
   const unsubscribeError = await listenInferenceError((payload: InferenceErrorPayload) => {
+    const status = payload.message === "cancelled" ? "cancelled" : "error";
     batchStore.getState().updateItem(payload.id, {
-      status: "error",
+      status,
       stage: null,
-      error: payload.message,
+      error: status === "error" ? payload.message : null,
     });
   });
 

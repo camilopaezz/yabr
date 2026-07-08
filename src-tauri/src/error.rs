@@ -5,6 +5,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("not implemented")]
     NotImplemented,
+    #[error("cancelled")]
+    Cancelled,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("serde error: {0}")]

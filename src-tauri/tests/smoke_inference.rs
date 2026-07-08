@@ -12,13 +12,12 @@ fn u2netp_smoke_iou() {
     let image = image_io::decode(&image_bytes).unwrap();
     let original_size = (image.width(), image.height());
 
-    let models = models::list_models().unwrap();
-    let u2netp = models.iter().find(|m| m.id == "u2netp").unwrap();
+    let u2netp = models::find_model("u2netp").unwrap();
     let tensor = pipeline::preprocess(u2netp, &image).unwrap();
 
     let mut session = inference::load_session_from_bytes(inference::U2NETP_MODEL_BYTES, "cpu").unwrap();
     let output = inference::run(&mut session, &tensor).unwrap();
-    let alpha = pipeline::postprocess(original_size, &output).unwrap();
+    let alpha = pipeline::postprocess("u2netp", original_size, &output).unwrap();
 
     let rgb = image.to_rgb8();
     let output_bytes = image_io::encode_png_rgba(&rgb, &alpha).unwrap();
