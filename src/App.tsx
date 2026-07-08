@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import { FileDropZone } from "./components/FileDropZone";
 import { ModeSelector } from "./components/ModeSelector";
-import { BatchList } from "./components/BatchList";
+import { ImagePanel } from "./components/ImagePanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { initEventListeners } from "./stores/progressStore";
-import { useBatchStore } from "./stores/batchStore";
+import { useImageStore } from "./stores/imageStore";
 import { settingsStore } from "./stores/settingsStore";
 import { invokeDetectGpu, invokeGetConfig, invokeRunBenchmark } from "./lib/tauri";
 import "./App.css";
 
 function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState(false);
   const [ready, setReady] = useState(false);
-  const items = useBatchStore((state) => state.items);
+  const current = useImageStore((state) => state.current);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -55,8 +54,6 @@ function App() {
       unsubscribe?.();
     };
   }, []);
-
-  const selectedItem = items.find((item) => item.id === selectedId) ?? items[items.length - 1];
 
   return (
     <main
@@ -112,13 +109,13 @@ function App() {
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <ModeSelector />
-              <BatchList selectedId={selectedId} onSelect={setSelectedId} />
+              <ImagePanel />
             </div>
 
             <div>
               <PreviewCanvas
-                inputPath={selectedItem?.inputPath ?? null}
-                outputPath={selectedItem?.outputPath ?? null}
+                inputPath={current?.inputPath ?? null}
+                outputPath={current?.outputPath ?? null}
               />
             </div>
           </div>

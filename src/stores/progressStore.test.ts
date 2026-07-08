@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { batchStore } from "./batchStore";
+import { imageStore } from "./imageStore";
 import { initEventListeners } from "./progressStore";
 
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
@@ -16,16 +16,16 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 describe("progressStore", () => {
   beforeEach(() => {
-    batchStore.setState({ items: [] });
+    imageStore.setState({ current: null });
     Object.keys(handlers).forEach((key) => delete handlers[key]);
   });
 
-  it("patches progress on inference:progress", async () => {
-    batchStore.getState().addItem({
+  it("patches progress on inference:progress for the current image", async () => {
+    imageStore.getState().set({
       id: "img-1",
       inputPath: "/tmp/in.png",
       outputPath: null,
-      status: "queued",
+      status: "ready",
       progress: 0,
       stage: null,
       error: null,
@@ -37,14 +37,34 @@ describe("progressStore", () => {
       payload: { id: "img-1", stage: "inferring", pct: 55 },
     });
 
-    const item = batchStore.getState().items[0];
-    expect(item.status).toBe("processing");
-    expect(item.stage).toBe("inferring");
-    expect(item.progress).toBe(55);
+    const current = imageStore.getState().current;
+    expect(current?.status).toBe("processing");
+    expect(current?.stage).toBe("inferring");
+    expect(current?.progress).toBe(55);
+  });
+
+  it("ignores progress events for a different id", async () => {
+    imageStore.getState().set({
+      id: "img-1",
+      inputPath: "/tmp/in.png",
+      outputPath: null,
+      status: "ready",
+      progress: 0,
+      stage: null,
+      error: null,
+    });
+
+    await initEventListeners();
+
+    handlers["inference:progress"]({
+      payload: { id: "other", stage: "inferring", pct: 55 },
+    });
+
+    expect(imageStore.getState().current?.status).toBe("ready");
   });
 
   it("sets done status and output path on inference:done", async () => {
-    batchStore.getState().addItem({
+    imageStore.getState().set({
       id: "img-2",
       inputPath: "/tmp/in.png",
       outputPath: null,
@@ -60,15 +80,15 @@ describe("progressStore", () => {
       payload: { id: "img-2", output_path: "/tmp/out.png" },
     });
 
-    const item = batchStore.getState().items[0];
-    expect(item.status).toBe("done");
-    expect(item.outputPath).toBe("/tmp/out.png");
-    expect(item.progress).toBe(100);
-    expect(item.stage).toBeNull();
+    const current = imageStore.getState().current;
+    expect(current?.status).toBe("done");
+    expect(current?.outputPath).toBe("/tmp/out.png");
+    expect(current?.progress).toBe(100);
+    expect(current?.stage).toBeNull();
   });
 
   it("sets error status and message on inference:error", async () => {
-    batchStore.getState().addItem({
+    imageStore.getState().set({
       id: "img-3",
       inputPath: "/tmp/in.png",
       outputPath: null,
@@ -84,14 +104,14 @@ describe("progressStore", () => {
       payload: { id: "img-3", message: "out of memory" },
     });
 
-    const item = batchStore.getState().items[0];
-    expect(item.status).toBe("error");
-    expect(item.error).toBe("out of memory");
-    expect(item.stage).toBeNull();
+    const current = imageStore.getState().current;
+    expect(current?.status).toBe("error");
+    expect(current?.error).toBe("out of memory");
+    expect(current?.stage).toBeNull();
   });
 
   it("sets cancelled status when error message is cancelled", async () => {
-    batchStore.getState().addItem({
+    imageStore.getState().set({
       id: "img-4",
       inputPath: "/tmp/in.png",
       outputPath: null,
@@ -107,9 +127,9 @@ describe("progressStore", () => {
       payload: { id: "img-4", message: "cancelled" },
     });
 
-    const item = batchStore.getState().items[0];
-    expect(item.status).toBe("cancelled");
-    expect(item.error).toBeNull();
-    expect(item.stage).toBeNull();
+    const current = imageStore.getState().current;
+    expect(current?.status).toBe("cancelled");
+    expect(current?.error).toBeNull();
+    expect(current?.stage).toBeNull();
   });
 });

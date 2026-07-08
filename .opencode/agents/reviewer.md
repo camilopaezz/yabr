@@ -24,7 +24,7 @@ Review the builder's work after each phase. You check for: bugs, logic errors, c
 ## Review checklist (apply to every phase)
 1. **Deliverables**: Does the work meet every deliverable listed in plan §12 for this phase? List each deliverable and mark met/unmet.
 2. **Plan conformance**: Are locked decisions (A1–A19) respected? Are the pinned versions used? Is the module structure per §3?
-3. **Bugs & logic errors**: Read the code carefully. Look for: off-by-one errors, incorrect tensor shapes/preprocessing (plan §4 contract), wrong normalization values, incorrect NCHW/NHWC handling, alpha channel bugs, event payload mismatches (plan §8), race conditions in batch worker, cancel token issues.
+3. **Bugs & logic errors**: Read the code carefully. Look for: off-by-one errors, incorrect tensor shapes/preprocessing (plan §4 contract), wrong normalization values, incorrect NCHW/NHWC handling, alpha channel bugs, event payload mismatches (plan §8), cancel token issues in the single-image `processing` runner.
 4. **Compile/runtime**: Run the build (`cargo build`, `npm run build`) and tests (`cargo test`, `vitest` if applicable). Report any failures.
 5. **Security**: No secrets/keys in code. Download verification (SHA-256) is correct. No path traversal in output paths.
 6. **Code quality**: No dead code, no TODO/FIXME left behind, no panics where errors should be propagated, proper error types (thiserror), idiomatic Rust/TypeScript.

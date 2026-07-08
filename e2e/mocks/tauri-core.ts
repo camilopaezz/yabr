@@ -28,7 +28,7 @@ export function invoke<T>(
       const inner = (args as Record<string, unknown>).args as { id: string; outputPath: string };
       return simulateInference(inner) as Promise<T>;
     }
-    case "cancel_batch":
+    case "cancel_inference":
       return Promise.resolve(undefined as T);
     default:
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));

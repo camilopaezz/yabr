@@ -111,10 +111,10 @@ test.describe("yabr", () => {
 
   test("end-to-end mocked flow", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Drag & drop images here")).toBeVisible();
+    await expect(page.getByText("Drag & drop an image here")).toBeVisible();
 
     const inputPath = "/yabr/e2e/fixtures/sample.png";
-    const expectedOutputPath = "/yabr/e2e/output/sample-nobg.png";
+    const expectedOutputPath = "/yabr/e2e/output/sample-nobg-u2netp.png";
 
     await page.evaluate((path) => {
       const hook = window.__yabrInjectDrop;
@@ -124,7 +124,7 @@ test.describe("yabr", () => {
       hook([path]);
     }, inputPath);
 
-    // Click "Process N images" button to trigger handleProcessAll ->
+    // Click "Process" button to trigger handleProcess ->
     // invokeRemoveImageBackground -> tauriInvoke("remove_image_background")
     await page.getByRole("button", { name: /process/i }).click();
 

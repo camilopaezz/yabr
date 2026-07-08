@@ -1,23 +1,15 @@
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::batch::{BatchJob, BatchState};
 use crate::config::Config;
 use crate::error::AppError;
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::models::ModelMeta;
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoveBackgroundArgs {
-    pub id: String,
-    pub input_path: String,
-    pub output_path: String,
-    pub model_id: String,
-}
+use crate::processing::{ProcessingJob, ProcessingState};
 
 #[tauri::command]
 pub async fn detect_gpu() -> Result<GpuInfo, AppError> {
@@ -65,20 +57,37 @@ pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), AppE
 
 #[tauri::command]
 pub async fn remove_image_background(
-    state: State<'_, Arc<BatchState>>,
-    args: RemoveBackgroundArgs,
+    app: AppHandle,
+    state: State<'_, Arc<ProcessingState>>,
+    args: ProcessingJob,
 ) -> Result<(), AppError> {
-    state.enqueue(BatchJob {
-        id: args.id,
-        input_path: args.input_path,
-        output_path: args.output_path,
-        model_id: args.model_id,
-    });
+    state.reset();
+    let processing_state = state.inner().clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            crate::processing::run_one(&app_handle, &processing_state, &args)
+        }));
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(AppError::Cancelled)) => {
+                crate::processing::emit_error_event(&app_handle, &args.id, "cancelled");
+            }
+            Ok(Err(e)) => {
+                crate::processing::emit_error_event(&app_handle, &args.id, &e.to_string());
+            }
+            Err(_) => {
+                crate::processing::emit_error_event(&app_handle, &args.id, "worker panic");
+            }
+        }
+    })
+    .await
+    .map_err(|e| AppError::Inference(e.to_string()))?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn cancel_batch(state: State<'_, Arc<BatchState>>) -> Result<(), AppError> {
+pub async fn cancel_inference(state: State<'_, Arc<ProcessingState>>) -> Result<(), AppError> {
     state.cancel();
     Ok(())
 }

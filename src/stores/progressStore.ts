@@ -6,12 +6,14 @@ import {
   type InferenceErrorPayload,
   type InferenceProgressPayload,
 } from "../lib/tauri";
-import { batchStore } from "./batchStore";
+import { imageStore } from "./imageStore";
 
 export async function initEventListeners(): Promise<() => void> {
   const unsubscribeProgress = await listenInferenceProgress(
     (payload: InferenceProgressPayload) => {
-      batchStore.getState().updateItem(payload.id, {
+      const current = imageStore.getState().current;
+      if (!current || current.id !== payload.id) return;
+      imageStore.getState().patch({
         status: "processing",
         progress: payload.pct,
         stage: payload.stage,
@@ -20,7 +22,9 @@ export async function initEventListeners(): Promise<() => void> {
   );
 
   const unsubscribeDone = await listenInferenceDone((payload: InferenceDonePayload) => {
-    batchStore.getState().updateItem(payload.id, {
+    const current = imageStore.getState().current;
+    if (!current || current.id !== payload.id) return;
+    imageStore.getState().patch({
       status: "done",
       progress: 100,
       stage: null,
@@ -29,8 +33,10 @@ export async function initEventListeners(): Promise<() => void> {
   });
 
   const unsubscribeError = await listenInferenceError((payload: InferenceErrorPayload) => {
+    const current = imageStore.getState().current;
+    if (!current || current.id !== payload.id) return;
     const status = payload.message === "cancelled" ? "cancelled" : "error";
-    batchStore.getState().updateItem(payload.id, {
+    imageStore.getState().patch({
       status,
       stage: null,
       error: status === "error" ? payload.message : null,

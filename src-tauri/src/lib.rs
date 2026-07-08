@@ -1,8 +1,3 @@
-use std::sync::Arc;
-
-use tauri::Manager;
-
-pub mod batch;
 pub mod commands;
 mod config;
 pub mod error;
@@ -12,6 +7,7 @@ pub mod image_io;
 pub mod inference;
 pub mod models;
 pub mod pipeline;
+pub mod processing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,12 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(crate::batch::BatchState::new())
-        .setup(|app| {
-            let state = app.state::<Arc<crate::batch::BatchState>>();
-            crate::batch::start_worker(app.handle().clone(), state.inner().clone());
-            Ok(())
-        })
+        .manage(crate::processing::ProcessingState::new())
         .invoke_handler(tauri::generate_handler![
             commands::detect_gpu,
             commands::run_benchmark,
@@ -32,7 +23,7 @@ pub fn run() {
             commands::list_models,
             commands::download_model,
             commands::remove_image_background,
-            commands::cancel_batch,
+            commands::cancel_inference,
             commands::pick_output_dir,
             commands::get_config,
             commands::set_config,
