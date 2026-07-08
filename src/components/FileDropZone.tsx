@@ -1,8 +1,12 @@
+import { exists } from "@tauri-apps/plugin-fs";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef } from "react";
 import { useTauriFileDrop } from "../lib/useTauriFileDrop";
 import { batchStore } from "../stores/batchStore";
 import { invokeRemoveImageBackground } from "../lib/tauri";
 import { useSettingsStore } from "../stores/settingsStore";
+import { deriveOutputPath } from "../lib/path";
+import { shouldProceedWithOverwrite } from "../lib/overwrite";
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "bmp"]);
 
@@ -15,18 +19,10 @@ function isImageFile(path: string): boolean {
   return IMAGE_EXTENSIONS.has(getExtension(path));
 }
 
-function deriveOutputPath(inputPath: string): string {
-  const lastSep = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
-  const dir = lastSep >= 0 ? inputPath.slice(0, lastSep) : ".";
-  const file = lastSep >= 0 ? inputPath.slice(lastSep + 1) : inputPath;
-  const dot = file.lastIndexOf(".");
-  const stem = dot >= 0 ? file.slice(0, dot) : file;
-  return `${dir}/${stem}-nobg.png`;
-}
-
 export function FileDropZone() {
   const { isDragging, paths } = useTauriFileDrop();
   const mode = useSettingsStore((state) => state.mode);
+  const outputDir = useSettingsStore((state) => state.outputDir);
   const lastProcessedRef = useRef<string[] | null>(null);
 
   useEffect(() => {
@@ -34,35 +30,48 @@ export function FileDropZone() {
     if (lastProcessedRef.current === paths) return;
     lastProcessedRef.current = paths;
 
-    const imagePaths = paths.filter(isImageFile);
+    const process = async () => {
+      const imagePaths = paths.filter(isImageFile);
 
-    imagePaths.forEach((inputPath) => {
-      const id = crypto.randomUUID();
-      const outputPath = deriveOutputPath(inputPath);
+      for (const inputPath of imagePaths) {
+        const id = crypto.randomUUID();
+        const outputPath = deriveOutputPath(inputPath, outputDir);
 
-      batchStore.getState().addItem({
-        id,
-        inputPath,
-        outputPath,
-        status: "queued",
-        progress: 0,
-        stage: null,
-        error: null,
-      });
-
-      invokeRemoveImageBackground({
-        id,
-        inputPath,
-        outputPath,
-        modelId: mode,
-      }).catch((err: unknown) => {
-        batchStore.getState().updateItem(id, {
-          status: "error",
-          error: err instanceof Error ? err.message : String(err),
+        batchStore.getState().addItem({
+          id,
+          inputPath,
+          outputPath,
+          status: "queued",
+          progress: 0,
+          stage: null,
+          error: null,
         });
-      });
-    });
-  }, [paths, mode]);
+
+        const shouldProceed = await shouldProceedWithOverwrite(outputPath, exists, ask);
+        if (!shouldProceed) {
+          batchStore.getState().updateItem(id, {
+            status: "cancelled",
+            stage: null,
+          });
+          continue;
+        }
+
+        invokeRemoveImageBackground({
+          id,
+          inputPath,
+          outputPath,
+          modelId: mode,
+        }).catch((err: unknown) => {
+          batchStore.getState().updateItem(id, {
+            status: "error",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    };
+
+    process();
+  }, [paths, mode, outputDir]);
 
   return (
     <div

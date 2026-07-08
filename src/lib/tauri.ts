@@ -100,6 +100,10 @@ export function invokeRemoveImageBackground(args: RemoveBackgroundArgs): Promise
   return tauriInvoke("remove_image_background", args);
 }
 
+export function invokePickOutputDir(): Promise<string | null> {
+  return tauriInvoke("pick_output_dir");
+}
+
 export function invokeCancelBatch(): Promise<void> {
   return tauriInvoke("cancel_batch");
 }

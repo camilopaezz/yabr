@@ -85,6 +85,37 @@ export function PreviewCanvas({ inputPath, outputPath }: PreviewCanvasProps) {
 
   return (
     <div style={{ width: "100%" }}>
+      {canToggle && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <button
+            onClick={() => setShowOutput(false)}
+            style={{
+              fontWeight: !showOutput ? 700 : 400,
+              opacity: !showOutput ? 1 : 0.7,
+              transition: "all 0.2s ease",
+            }}
+          >
+            Original
+          </button>
+          <button
+            onClick={() => setShowOutput(true)}
+            style={{
+              fontWeight: showOutput ? 700 : 400,
+              opacity: showOutput ? 1 : 0.7,
+              transition: "all 0.2s ease",
+            }}
+          >
+            No Background
+          </button>
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         onClick={() => canToggle && setShowOutput((prev) => !prev)}
@@ -99,6 +130,7 @@ export function PreviewCanvas({ inputPath, outputPath }: PreviewCanvasProps) {
           backgroundSize: "16px 16px",
           backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
           backgroundColor: "#fff",
+          transition: "opacity 0.2s ease, transform 0.2s ease",
         }}
       />
       {canToggle && (

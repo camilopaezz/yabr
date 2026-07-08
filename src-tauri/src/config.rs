@@ -26,7 +26,7 @@ pub fn config_path(app: &AppHandle) -> Result<PathBuf, AppError> {
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Config(e.to_string()))?;
-    Ok(app_data.join("yabr").join("config.json"))
+    Ok(app_data.join("config.json"))
 }
 
 pub fn load_config(app: &AppHandle) -> Result<Config, AppError> {

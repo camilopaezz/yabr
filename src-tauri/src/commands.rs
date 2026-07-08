@@ -1,6 +1,8 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::batch::{BatchJob, BatchState};
 use crate::config::Config;
@@ -82,8 +84,40 @@ pub async fn cancel_batch(state: State<'_, Arc<BatchState>>) -> Result<(), AppEr
 }
 
 #[tauri::command]
-pub async fn pick_output_dir() -> Result<Option<String>, AppError> {
-    Ok(None)
+pub async fn pick_output_dir(app: AppHandle) -> Result<Option<String>, AppError> {
+    let config = crate::config::load_config(&app)?;
+    let current_dir = config
+        .output_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir());
+
+    let dialog = app.dialog().file();
+    let dialog = if let Some(dir) = current_dir {
+        dialog.set_directory(dir)
+    } else {
+        dialog
+    };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    dialog.pick_folder(move |path| {
+        let _ = tx.send(path);
+    });
+
+    let path = rx.await.ok().flatten();
+
+    if let Some(path) = path {
+        let path_buf = path
+            .into_path()
+            .map_err(|e| AppError::Dialog(format!("invalid path: {}", e)))?;
+        let path_str = path_buf.to_string_lossy().into_owned();
+        let mut config = crate::config::load_config(&app)?;
+        config.output_dir = Some(path_str.clone());
+        crate::config::save_config(&app, &config)?;
+        Ok(Some(path_str))
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]

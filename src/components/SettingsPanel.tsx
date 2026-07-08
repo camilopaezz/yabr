@@ -3,6 +3,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   invokeDetectGpu,
   invokeGetConfig,
+  invokePickOutputDir,
   invokeRunBenchmark,
   invokeSetEp,
 } from "../lib/tauri";
@@ -18,6 +19,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
     gpuInfo,
     benchmarkResult,
     setEp: setEpInStore,
+    setOutputDir,
     setGpuInfo,
     setBenchmarkResult,
   } = useSettingsStore();
@@ -36,6 +38,17 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       setEpInStore(value);
     } catch (err) {
       console.error("set_ep failed", err);
+    }
+  };
+
+  const handlePickOutputDir = async () => {
+    try {
+      const picked = await invokePickOutputDir();
+      if (picked) {
+        setOutputDir(picked);
+      }
+    } catch (err) {
+      console.error("pick_output_dir failed", err);
     }
   };
 
@@ -81,7 +94,24 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
 
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: "block", marginBottom: 4 }}>Output directory</label>
-        <div style={{ opacity: 0.8 }}>{outputDir ?? "Same as input (default)"}</div>
+        <button
+          onClick={handlePickOutputDir}
+          style={{
+            width: "100%",
+            textAlign: "left",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={outputDir ?? "Same as input (default)"}
+        >
+          {outputDir ?? "Choose output directory"}
+        </button>
+        {!outputDir && (
+          <div style={{ fontSize: "0.8rem", opacity: 0.6, marginTop: 4 }}>
+            Same as input (default)
+          </div>
+        )}
       </div>
 
       <div style={{ marginBottom: 12 }}>

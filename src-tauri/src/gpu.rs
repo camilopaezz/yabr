@@ -193,14 +193,19 @@ pub fn run_benchmark(app: &AppHandle) -> Result<BenchmarkResult, AppError> {
     let mut ep_latencies = Vec::new();
     // If the requested EP runtime is not installed, ORT silently falls back to CPU.
     for ep in available_eps {
-        let mut session =
-            crate::inference::load_session_from_bytes(crate::inference::U2NETP_MODEL_BYTES, &ep)?;
-        let _warmup = crate::inference::run(&mut session, &tensor)?;
-        let _warmup_alpha = crate::pipeline::postprocess("u2netp", original_size, &_warmup)?;
-        let start = Instant::now();
-        let output = crate::inference::run(&mut session, &tensor)?;
-        let _alpha = crate::pipeline::postprocess("u2netp", original_size, &output)?;
-        let seconds = start.elapsed().as_secs_f64();
+        let seconds = crate::inference::with_session(
+            "u2netp",
+            &ep,
+            || Ok(crate::inference::U2NETP_MODEL_BYTES.to_vec()),
+            |session| {
+                let _warmup = crate::inference::run(session, &tensor)?;
+                let _warmup_alpha = crate::pipeline::postprocess("u2netp", original_size, &_warmup)?;
+                let start = Instant::now();
+                let output = crate::inference::run(session, &tensor)?;
+                let _alpha = crate::pipeline::postprocess("u2netp", original_size, &output)?;
+                Ok(start.elapsed().as_secs_f64())
+            },
+        )?;
         ep_latencies.push(EpLatency {
             ep: ep.clone(),
             seconds,

@@ -108,15 +108,19 @@ fn run_one_job(app: &AppHandle, state: &BatchState, job: &BatchJob) -> Result<()
 
     emit_progress(app, job.id.clone(), "inferring", 50.0)?;
     state.check_cancel()?;
-    let model_bytes = if model.bundled {
-        crate::inference::U2NETP_MODEL_BYTES.to_vec()
-    } else {
-        std::fs::read(crate::models::model_cache_path(app, model)?)?
-    };
     let ep = crate::config::load_config(app)?.execution_provider();
-    let output = crate::inference::with_session(&job.model_id, &ep, &model_bytes, |session| {
-        crate::inference::run(session, &tensor)
-    })?;
+    let output = crate::inference::with_session(
+        &job.model_id,
+        &ep,
+        || {
+            if model.bundled {
+                Ok(crate::inference::U2NETP_MODEL_BYTES.to_vec())
+            } else {
+                Ok(std::fs::read(crate::models::model_cache_path(app, model)?)?)
+            }
+        },
+        |session| crate::inference::run(session, &tensor),
+    )?;
 
     emit_progress(app, job.id.clone(), "postprocessing", 80.0)?;
     state.check_cancel()?;

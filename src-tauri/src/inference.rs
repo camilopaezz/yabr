@@ -54,9 +54,10 @@ pub fn invalidate_all_sessions() -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn with_session<F, R>(model_id: &str, ep: &str, model_bytes: &[u8], f: F) -> Result<R, AppError>
+pub fn with_session<F, R, L>(model_id: &str, ep: &str, load_bytes: L, f: F) -> Result<R, AppError>
 where
     F: FnOnce(&mut Session) -> Result<R, AppError>,
+    L: FnOnce() -> Result<Vec<u8>, AppError>,
 {
     let mut guard = SESSION_CACHE
         .lock()
@@ -64,7 +65,8 @@ where
     let cache = guard.get_or_insert_with(HashMap::new);
     let key = (model_id.to_string(), ep.to_string());
     if !cache.contains_key(&key) {
-        let session = load_session_from_bytes(model_bytes, ep)?;
+        let model_bytes = load_bytes()?;
+        let session = load_session_from_bytes(&model_bytes, ep)?;
         cache.insert(key.clone(), session);
     }
     let session = cache
@@ -116,13 +118,13 @@ mod tests {
     #[test]
     fn session_cache_keyed_by_model_and_ep() {
         let _ = invalidate_all_sessions();
-        let r1 = with_session("u2netp", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+        let r1 = with_session("u2netp", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |session| {
             Ok(session.inputs().len())
         });
-        let r2 = with_session("u2netp", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+        let r2 = with_session("u2netp", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |session| {
             Ok(session.inputs().len())
         });
-        let r3 = with_session("isnet-stub", EP_CPU, U2NETP_MODEL_BYTES, |session| {
+        let r3 = with_session("isnet-stub", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |session| {
             Ok(session.inputs().len())
         });
         assert_eq!(r1.unwrap(), 1);
