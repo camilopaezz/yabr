@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
+import type { BenchmarkResult, GpuInfo } from "../lib/tauri";
 import type { ModelMode } from "../lib/models";
 
 export type Theme = "system" | "light" | "dark";
@@ -9,6 +10,8 @@ export type SettingsState = {
   outputDir: string | null;
   ep: string | null;
   theme: Theme;
+  gpuInfo: GpuInfo | null;
+  benchmarkResult: BenchmarkResult | null;
 };
 
 export type SettingsActions = {
@@ -16,6 +19,8 @@ export type SettingsActions = {
   setOutputDir: (outputDir: string | null) => void;
   setEp: (ep: string | null) => void;
   setTheme: (theme: Theme) => void;
+  setGpuInfo: (gpuInfo: GpuInfo | null) => void;
+  setBenchmarkResult: (benchmarkResult: BenchmarkResult | null) => void;
 };
 
 export const settingsStore = createStore<SettingsState & SettingsActions>((set) => ({
@@ -23,10 +28,14 @@ export const settingsStore = createStore<SettingsState & SettingsActions>((set) 
   outputDir: null,
   ep: null,
   theme: "system",
+  gpuInfo: null,
+  benchmarkResult: null,
   setMode: (mode) => set({ mode }),
   setOutputDir: (outputDir) => set({ outputDir }),
   setEp: (ep) => set({ ep }),
   setTheme: (theme) => set({ theme }),
+  setGpuInfo: (gpuInfo) => set({ gpuInfo }),
+  setBenchmarkResult: (benchmarkResult) => set({ benchmarkResult }),
 }));
 
 export function useSettingsStore(): SettingsState & SettingsActions;

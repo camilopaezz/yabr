@@ -22,12 +22,17 @@ pub struct RemoveBackgroundArgs {
 
 #[tauri::command]
 pub async fn detect_gpu() -> Result<GpuInfo, AppError> {
-    crate::gpu::detect_gpu()
+    tauri::async_runtime::spawn_blocking(crate::gpu::detect_gpu)
+        .await
+        .map_err(|e| AppError::Inference(e.to_string()))?
 }
 
 #[tauri::command]
-pub async fn run_benchmark() -> Result<BenchmarkResult, AppError> {
-    crate::gpu::run_benchmark()
+pub async fn run_benchmark(app: AppHandle) -> Result<BenchmarkResult, AppError> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::gpu::run_benchmark(&app))
+        .await
+        .map_err(|e| AppError::Inference(e.to_string()))?
 }
 
 #[tauri::command]

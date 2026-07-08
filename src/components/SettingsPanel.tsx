@@ -1,8 +1,58 @@
+import { useEffect, useState } from "react";
+import { useSettingsStore } from "../stores/settingsStore";
+import {
+  invokeDetectGpu,
+  invokeGetConfig,
+  invokeRunBenchmark,
+  invokeSetEp,
+} from "../lib/tauri";
+
 export type SettingsPanelProps = {
   visible: boolean;
 };
 
 export function SettingsPanel({ visible }: SettingsPanelProps) {
+  const {
+    ep,
+    outputDir,
+    gpuInfo,
+    benchmarkResult,
+    setEp: setEpInStore,
+    setGpuInfo,
+    setBenchmarkResult,
+  } = useSettingsStore();
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    invokeDetectGpu()
+      .then((info) => setGpuInfo(info))
+      .catch(() => {});
+  }, [visible, setGpuInfo]);
+
+  const handleEpChange = async (value: string) => {
+    try {
+      await invokeSetEp(value);
+      setEpInStore(value);
+    } catch (err) {
+      console.error("set_ep failed", err);
+    }
+  };
+
+  const handleBenchmark = async () => {
+    setLoading(true);
+    try {
+      const result = await invokeRunBenchmark();
+      setBenchmarkResult(result);
+      const config = await invokeGetConfig();
+      setEpInStore(config.execution_provider);
+    } catch (err) {
+      console.error("benchmark failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!visible) return null;
 
   return (
@@ -14,10 +64,49 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       }}
     >
       <h3 style={{ margin: "0 0 12px" }}>Settings</h3>
-      <p style={{ margin: 0, opacity: 0.7, fontSize: "0.9rem" }}>
-        Execution provider override, output directory, and benchmark re-run will be available in a
-        later phase.
-      </p>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: "block", marginBottom: 4 }}>Execution provider</label>
+        <select value={ep ?? ""} onChange={(e) => handleEpChange(e.target.value)}>
+          <option value="" disabled>
+            Choose EP
+          </option>
+          {gpuInfo?.available_eps.map((epOption) => (
+            <option key={epOption} value={epOption}>
+              {epOption}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: "block", marginBottom: 4 }}>Output directory</label>
+        <div style={{ opacity: 0.8 }}>{outputDir ?? "Same as input (default)"}</div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={handleBenchmark} disabled={loading}>
+          {loading ? "Benchmarking…" : "Re-run benchmark"}
+        </button>
+      </div>
+
+      {gpuInfo && (
+        <div style={{ fontSize: "0.9rem", opacity: 0.8 }}>
+          <div>GPU: {gpuInfo.vendor}</div>
+          <div>VRAM: {gpuInfo.vram_bytes ? `${gpuInfo.vram_bytes} bytes` : "Unknown"}</div>
+        </div>
+      )}
+
+      {benchmarkResult && (
+        <div style={{ fontSize: "0.9rem", opacity: 0.8, marginTop: 8 }}>
+          <div>Winner: {benchmarkResult.winner_ep}</div>
+          {benchmarkResult.ep_latencies.map((latency) => (
+            <div key={latency.ep}>
+              {latency.ep}: {latency.seconds.toFixed(3)}s
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -28,6 +28,49 @@ export const EVENT_PROGRESS = "inference:progress";
 export const EVENT_DONE = "inference:done";
 export const EVENT_ERROR = "inference:error";
 
+export type GpuInfo = {
+  vendor: string;
+  vram_bytes: number | null;
+  available_eps: string[];
+};
+
+export type EpLatency = {
+  ep: string;
+  seconds: number;
+};
+
+export type BenchmarkResult = {
+  ep_latencies: EpLatency[];
+  winner_ep: string;
+};
+
+export type Config = {
+  execution_provider: string | null;
+  model_id: string | null;
+  output_dir: string | null;
+  platform: string | null;
+};
+
+export function invokeDetectGpu(): Promise<GpuInfo> {
+  return tauriInvoke("detect_gpu");
+}
+
+export function invokeRunBenchmark(): Promise<BenchmarkResult> {
+  return tauriInvoke("run_benchmark");
+}
+
+export function invokeSetEp(ep: string): Promise<void> {
+  return tauriInvoke("set_ep", { ep });
+}
+
+export function invokeGetConfig(): Promise<Config> {
+  return tauriInvoke("get_config");
+}
+
+export function invokeSetConfig(config: Config): Promise<void> {
+  return tauriInvoke("set_config", { config });
+}
+
 export function invokeRemoveImageBackground(args: RemoveBackgroundArgs): Promise<void> {
   return tauriInvoke("remove_image_background", args);
 }
