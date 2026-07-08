@@ -34,9 +34,8 @@ pub fn postprocess(
     output: &ndarray::ArrayD<f32>,
 ) -> Result<GrayImage, AppError> {
     match model_id {
-        "u2netp" => postprocess_u2netp(original_size, output),
-        "isnet-general-use" | "rmbg-1.4" | "rmbg-2.0" => {
-            postprocess_sigmoid(original_size, output)
+        "u2netp" | "isnet-general-use" | "rmbg-1.4" | "rmbg-2.0" => {
+            postprocess_minmax(original_size, output)
         }
         _ => Err(AppError::Pipeline(format!(
             "unknown postprocess model_id {}",
@@ -45,7 +44,7 @@ pub fn postprocess(
     }
 }
 
-fn postprocess_u2netp(
+fn postprocess_minmax(
     original_size: (u32, u32),
     output: &ndarray::ArrayD<f32>,
 ) -> Result<GrayImage, AppError> {
@@ -59,25 +58,6 @@ fn postprocess_u2netp(
             let v = logits[y * w + x];
             let n = if range == 0.0 { 0.0 } else { (v - min) / range };
             let p = (n * 255.0).round() as u8;
-            mask.put_pixel(x as u32, y as u32, image::Luma([p]));
-        }
-    }
-    let resized =
-        image::imageops::resize(&mask, original_size.0, original_size.1, FilterType::Lanczos3);
-    Ok(resized)
-}
-
-fn postprocess_sigmoid(
-    original_size: (u32, u32),
-    output: &ndarray::ArrayD<f32>,
-) -> Result<GrayImage, AppError> {
-    let (h, w, logits) = extract_logits(output)?;
-    let mut mask = GrayImage::new(w as u32, h as u32);
-    for y in 0..h {
-        for x in 0..w {
-            let v = logits[y * w + x];
-            let sig = 1.0 / (1.0 + (-v).exp());
-            let p = (sig * 255.0).round() as u8;
             mask.put_pixel(x as u32, y as u32, image::Luma([p]));
         }
     }
@@ -142,6 +122,21 @@ mod tests {
     }
 
     #[test]
+    fn preprocess_isnet_uses_half_range_normalization() {
+        let isnet = find_model("isnet-general-use").unwrap();
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            64,
+            64,
+            image::Rgb([255, 0, 0]),
+        ));
+        let tensor = preprocess(isnet, &img).unwrap();
+        assert_eq!(tensor.shape(), &[1, 3, 1024, 1024]);
+        let red = tensor[[0, 0, 10, 10]];
+        // (255/255 - 0.5) / 1.0 = 0.5
+        assert!((red - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
     fn postprocess_u2netp_min_max_normalization() {
         let mut data = Vec::with_capacity(32 * 32);
         for y in 0..32 {
@@ -179,14 +174,30 @@ mod tests {
     }
 
     #[test]
-    fn postprocess_rmbg_uses_sigmoid() {
-        // Large positive logits should approach 255, large negative should approach 0.
+    fn postprocess_rmbg_uses_minmax() {
+        // Raw model outputs are stretched to the full [0, 255] range.
         let output = ndarray::ArrayD::from_shape_vec(
             ndarray::IxDyn(&[1, 1, 2, 2]),
             vec![10.0f32, -10.0f32, 0.0f32, 0.0f32],
         )
         .unwrap();
         let mask = postprocess("rmbg-1.4", (2, 2), &output).unwrap();
+        assert_eq!(mask.dimensions(), (2, 2));
+        assert_eq!(mask.get_pixel(0, 0)[0], 255);
+        assert_eq!(mask.get_pixel(1, 0)[0], 0);
+        let mid = mask.get_pixel(0, 1)[0];
+        assert!((mid as i16 - 128).abs() <= 2);
+    }
+
+    #[test]
+    fn postprocess_isnet_uses_minmax() {
+        // Balanced (isnet-general-use) should also use min-max, not sigmoid.
+        let output = ndarray::ArrayD::from_shape_vec(
+            ndarray::IxDyn(&[1, 1, 2, 2]),
+            vec![8.0f32, -8.0f32, 0.0f32, 0.0f32],
+        )
+        .unwrap();
+        let mask = postprocess("isnet-general-use", (2, 2), &output).unwrap();
         assert_eq!(mask.dimensions(), (2, 2));
         assert_eq!(mask.get_pixel(0, 0)[0], 255);
         assert_eq!(mask.get_pixel(1, 0)[0], 0);

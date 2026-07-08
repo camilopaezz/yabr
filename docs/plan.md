@@ -141,18 +141,20 @@ Mirrored in `src-tauri/src/models.rs` (source of truth) and `src/lib/models.ts` 
 
 **Preprocessing contract per model** (encoded in registry):
 - `u2netp`: resize 320² (stretch to square), /255, normalize per-channel ImageNet mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225], NCHW float32.
-- `isnet-general-use`: resize 1024², /255, normalize mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225].
+- `isnet-general-use`: resize 1024², /255, normalize mean=0.5 std=1.0.
 - `RMBG-1.4`: resize 1024², /255, normalize mean=0.5 std=1.0.
 - `RMBG-2.0`: resize 1024², /255, normalize mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225].
 
-**Postprocessing is per-model** (the model's side-output activation is usually baked into the
-ONNX graph; do not re-apply sigmoid unless the model outputs raw logits that require it):
+**Postprocessing is per-model** (all current models emit a single-channel logit-like mask that
+must be stretched to the full [0, 255] range; no second sigmoid is applied):
 - `u2netp`: take the **first** output (d0, shape [1,1,320,320]) → min-max normalize over the
   [H×W] logits → *255 → uint8 mask → resize to original HxW → stack with original RGB →
-  encode PNG. (u2netp's graph already applies sigmoid internally, so min-max — not a second
-  sigmoid — yields a full-range mask. Matches rembg's `U2netpSession.predict`.)
-- `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`: postprocessing finalized in Phase 6 when each
-  model is integrated and validated against reference outputs.
+  encode PNG. (u2netp's graph already applies sigmoid internally, so min-max yields a full-range
+  mask. Matches rembg's `U2netpSession.predict`.)
+- `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`: take the single-channel output
+  (shape [1,1,1024,1024]) → min-max normalize over [H×W] → *255 → uint8 mask → resize to
+  original HxW → stack with original RGB → encode PNG. Matches rembg/BRIA reference code.
+  (The earlier sigmoid path was incorrect and produced near-uniform masks.)
 
 ---
 
@@ -218,7 +220,7 @@ bytes ──image_io::decode──▶ DynamicImage
         │
         ▼
    pipeline::postprocess(original_size)
-        │  sigmoid → resize to original HxW → *255 → u8
+        │  min-max → resize to original HxW → *255 → u8
         ▼
    alpha: GrayImage
         │

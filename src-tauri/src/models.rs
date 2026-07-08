@@ -89,8 +89,8 @@ fn registry() -> &'static [ModelEntry] {
                 file: "isnet-general-use.onnx".into(),
                 size_bytes: 178_000_000,
                 input_size: 1024,
-                mean: vec![0.485, 0.456, 0.406],
-                std: vec![0.229, 0.224, 0.225],
+                mean: vec![0.5, 0.5, 0.5],
+                std: vec![1.0, 1.0, 1.0],
                 license: "Apache-2.0".into(),
                 source: "xuebinqin/DIS via rembg".into(),
                 download_url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx".into(),
@@ -370,7 +370,8 @@ mod tests {
     fn isnet_metadata() {
         let m = find_model("isnet-general-use").unwrap();
         assert_eq!(m.input_size, 1024);
-        assert_eq!(m.mean, vec![0.485, 0.456, 0.406]);
+        assert_eq!(m.mean, vec![0.5, 0.5, 0.5]);
+        assert_eq!(m.std, vec![1.0, 1.0, 1.0]);
         assert!(!is_placeholder_checksum(&m.sha256));
         assert!(!m.bundled);
     }
