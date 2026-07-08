@@ -3,33 +3,33 @@ import { deriveOutputPath } from "./path";
 
 describe("deriveOutputPath", () => {
   it("places output next to input when outputDir is unset", () => {
-    expect(deriveOutputPath("/home/user/pics/photo.jpg", null)).toBe(
-      "/home/user/pics/photo-nobg.png",
+    expect(deriveOutputPath("/home/user/pics/photo.jpg", null, "u2netp")).toBe(
+      "/home/user/pics/photo-nobg-u2netp.png",
     );
   });
 
   it("places output in configured outputDir", () => {
-    expect(deriveOutputPath("/home/user/pics/photo.jpg", "/tmp/outputs")).toBe(
-      "/tmp/outputs/photo-nobg.png",
+    expect(deriveOutputPath("/home/user/pics/photo.jpg", "/tmp/outputs", "rmbg-2.0")).toBe(
+      "/tmp/outputs/photo-nobg-rmbg-2.0.png",
     );
   });
 
   it("handles windows-style input paths", () => {
-    expect(deriveOutputPath("C:\\Users\\pics\\photo.jpg", "D:\\Outputs")).toBe(
-      "D:\\Outputs/photo-nobg.png",
+    expect(deriveOutputPath("C:\\Users\\pics\\photo.jpg", "D:\\Outputs", "isnet-general-use")).toBe(
+      "D:\\Outputs/photo-nobg-isnet-general-use.png",
     );
   });
 
   it("strips trailing separators from outputDir", () => {
-    expect(deriveOutputPath("/home/user/pics/photo.jpg", "/tmp/outputs/")).toBe(
-      "/tmp/outputs/photo-nobg.png",
+    expect(deriveOutputPath("/home/user/pics/photo.jpg", "/tmp/outputs/", "rmbg-1.4")).toBe(
+      "/tmp/outputs/photo-nobg-rmbg-1.4.png",
     );
   });
 
   it("handles input paths without a directory", () => {
-    expect(deriveOutputPath("photo.jpg", "/tmp/outputs")).toBe(
-      "/tmp/outputs/photo-nobg.png",
+    expect(deriveOutputPath("photo.jpg", "/tmp/outputs", "u2netp")).toBe(
+      "/tmp/outputs/photo-nobg-u2netp.png",
     );
-    expect(deriveOutputPath("photo.jpg", null)).toBe("./photo-nobg.png");
+    expect(deriveOutputPath("photo.jpg", null, "u2netp")).toBe("./photo-nobg-u2netp.png");
   });
 });

@@ -33,7 +33,7 @@ export function FileDropZone() {
 
     for (const inputPath of imagePaths) {
       const id = crypto.randomUUID();
-      const outputPath = deriveOutputPath(inputPath, outputDir);
+      const outputPath = deriveOutputPath(inputPath, outputDir, mode);
 
       batchStore.getState().addItem({
         id,

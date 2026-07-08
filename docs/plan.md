@@ -154,8 +154,7 @@ must be stretched to the full [0, 255] range; no second sigmoid is applied):
 - `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`: take the single-channel output
   (shape [1,1,1024,1024]) → min-max normalize over [H×W] → *255 → uint8 mask → resize to
   original HxW → **light Gaussian blur** (radius 1.0) to feather hard edges → stack with
-  original RGB → encode PNG. Matches rembg/BRIA reference code plus a subtle hair-edge
-  soften step. (The earlier sigmoid path was incorrect and produced near-uniform masks.)
+  original RGB → encode PNG. (The earlier sigmoid path was incorrect and produced near-uniform masks.)
 
 ---
 

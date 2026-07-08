@@ -230,4 +230,5 @@ mod tests {
         let result = postprocess("unknown", (2, 2), &output);
         assert!(result.is_err());
     }
+
 }
