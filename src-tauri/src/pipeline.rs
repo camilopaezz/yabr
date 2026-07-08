@@ -63,7 +63,10 @@ fn postprocess_minmax(
     }
     let resized =
         image::imageops::resize(&mask, original_size.0, original_size.1, FilterType::Lanczos3);
-    Ok(resized)
+    // Light Gaussian feathering on the mask edges keeps hair/fur borders from looking
+    // pixelated and hard after resizing back to the original resolution.
+    let feathered = image::imageops::blur(&resized, 1.0);
+    Ok(feathered)
 }
 
 fn extract_logits(output: &ndarray::ArrayD<f32>) -> Result<(usize, usize, Vec<f32>), AppError> {
@@ -138,23 +141,24 @@ mod tests {
 
     #[test]
     fn postprocess_u2netp_min_max_normalization() {
-        let mut data = Vec::with_capacity(32 * 32);
-        for y in 0..32 {
-            for x in 0..32 {
-                let nx = x as f32 / 31.0;
-                let ny = y as f32 / 31.0;
+        let mut data = Vec::with_capacity(64 * 64);
+        for y in 0..64 {
+            for x in 0..64 {
+                let nx = x as f32 / 63.0;
+                let ny = y as f32 / 63.0;
                 data.push(nx + ny - 1.0);
             }
         }
-        let output = ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 1, 32, 32]), data).unwrap();
-        let mask = postprocess("u2netp", (32, 32), &output).unwrap();
-        assert_eq!(mask.dimensions(), (32, 32));
+        let output = ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 1, 64, 64]), data).unwrap();
+        let mask = postprocess("u2netp", (64, 64), &output).unwrap();
+        assert_eq!(mask.dimensions(), (64, 64));
         let min_pixel = mask.pixels().map(|p| p[0]).min().unwrap();
         let max_pixel = mask.pixels().map(|p| p[0]).max().unwrap();
-        assert_eq!(min_pixel, 0);
-        assert_eq!(max_pixel, 255);
-        let mid = mask.get_pixel(15, 15)[0];
-        assert!((mid as i16 - 128).abs() <= 5);
+        // Edge feathering prevents the absolute extremes from being exactly 0/255.
+        assert!(min_pixel < 10);
+        assert!(max_pixel > 245);
+        let mid = mask.get_pixel(31, 31)[0];
+        assert!((mid as i16 - 128).abs() <= 8);
     }
 
     #[test]
@@ -175,34 +179,45 @@ mod tests {
 
     #[test]
     fn postprocess_rmbg_uses_minmax() {
-        // Raw model outputs are stretched to the full [0, 255] range.
-        let output = ndarray::ArrayD::from_shape_vec(
-            ndarray::IxDyn(&[1, 1, 2, 2]),
-            vec![10.0f32, -10.0f32, 0.0f32, 0.0f32],
-        )
-        .unwrap();
-        let mask = postprocess("rmbg-1.4", (2, 2), &output).unwrap();
-        assert_eq!(mask.dimensions(), (2, 2));
-        assert_eq!(mask.get_pixel(0, 0)[0], 255);
-        assert_eq!(mask.get_pixel(1, 0)[0], 0);
-        let mid = mask.get_pixel(0, 1)[0];
-        assert!((mid as i16 - 128).abs() <= 2);
+        // Raw model outputs are stretched to the full [0, 255] range and lightly feathered.
+        let mut data = Vec::with_capacity(16 * 16);
+        for _y in 0..16 {
+            for x in 0..16 {
+                let v = if x < 8 { 10.0f32 } else { -10.0f32 };
+                data.push(v);
+            }
+        }
+        let output = ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 1, 16, 16]), data).unwrap();
+        let mask = postprocess("rmbg-1.4", (16, 16), &output).unwrap();
+        assert_eq!(mask.dimensions(), (16, 16));
+        let min_pixel = mask.pixels().map(|p| p[0]).min().unwrap();
+        let max_pixel = mask.pixels().map(|p| p[0]).max().unwrap();
+        assert!(min_pixel < 10);
+        assert!(max_pixel > 245);
+        // Edge along x=8 should be softened by the feathering blur.
+        let edge = mask.get_pixel(8, 8)[0];
+        assert!(edge > 10 && edge < 245);
     }
 
     #[test]
     fn postprocess_isnet_uses_minmax() {
-        // Balanced (isnet-general-use) should also use min-max, not sigmoid.
-        let output = ndarray::ArrayD::from_shape_vec(
-            ndarray::IxDyn(&[1, 1, 2, 2]),
-            vec![8.0f32, -8.0f32, 0.0f32, 0.0f32],
-        )
-        .unwrap();
-        let mask = postprocess("isnet-general-use", (2, 2), &output).unwrap();
-        assert_eq!(mask.dimensions(), (2, 2));
-        assert_eq!(mask.get_pixel(0, 0)[0], 255);
-        assert_eq!(mask.get_pixel(1, 0)[0], 0);
-        let mid = mask.get_pixel(0, 1)[0];
-        assert!((mid as i16 - 128).abs() <= 2);
+        // Balanced (isnet-general-use) should use min-max and edge feathering.
+        let mut data = Vec::with_capacity(16 * 16);
+        for _y in 0..16 {
+            for x in 0..16 {
+                let v = if x < 8 { 8.0f32 } else { -8.0f32 };
+                data.push(v);
+            }
+        }
+        let output = ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 1, 16, 16]), data).unwrap();
+        let mask = postprocess("isnet-general-use", (16, 16), &output).unwrap();
+        assert_eq!(mask.dimensions(), (16, 16));
+        let min_pixel = mask.pixels().map(|p| p[0]).min().unwrap();
+        let max_pixel = mask.pixels().map(|p| p[0]).max().unwrap();
+        assert!(min_pixel < 10);
+        assert!(max_pixel > 245);
+        let edge = mask.get_pixel(8, 8)[0];
+        assert!(edge > 10 && edge < 245);
     }
 
     #[test]

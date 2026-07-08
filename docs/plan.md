@@ -153,8 +153,9 @@ must be stretched to the full [0, 255] range; no second sigmoid is applied):
   mask. Matches rembg's `U2netpSession.predict`.)
 - `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`: take the single-channel output
   (shape [1,1,1024,1024]) → min-max normalize over [H×W] → *255 → uint8 mask → resize to
-  original HxW → stack with original RGB → encode PNG. Matches rembg/BRIA reference code.
-  (The earlier sigmoid path was incorrect and produced near-uniform masks.)
+  original HxW → **light Gaussian blur** (radius 1.0) to feather hard edges → stack with
+  original RGB → encode PNG. Matches rembg/BRIA reference code plus a subtle hair-edge
+  soften step. (The earlier sigmoid path was incorrect and produced near-uniform masks.)
 
 ---
 
@@ -220,7 +221,7 @@ bytes ──image_io::decode──▶ DynamicImage
         │
         ▼
    pipeline::postprocess(original_size)
-        │  min-max → resize to original HxW → *255 → u8
+        │  min-max → resize → *255 → light Gaussian blur → u8
         ▼
    alpha: GrayImage
         │
@@ -378,7 +379,7 @@ per dropped file), `BatchList` (renders queue with per-item progress), `PreviewC
 **Future / out of scope for v1:**
 - macOS target (CoreML).
 - ROCm Linux AMD build.
-- Mask post-processing (feather, threshold, shrink/expand).
+- Mask threshold / shrink / expand controls (light Gaussian edge feathering is applied by default).
 - Solid color / gradient / image background replacement.
 - Video background removal.
 - Tiling for >4096 px images.
