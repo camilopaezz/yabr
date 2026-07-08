@@ -1,7 +1,7 @@
 ---
 description: Builds yabr app features per docs/plan.md. Use for implementation phases (Rust inference, Tauri commands, React UI, GPU EP, model registry, batch, output polish). Writes code, tests, and verifies builds.
 mode: subagent
-model: clinepass/cline-pass/glm-5.2
+model: deepseek/deepseek-v4-pro
 variant: high
 permission:
   edit: allow

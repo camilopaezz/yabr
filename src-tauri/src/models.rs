@@ -11,12 +11,27 @@ use tokio::io::AsyncWriteExt;
 use crate::error::AppError;
 use crate::events::{ModelDownloadPayload, MODEL_DOWNLOAD};
 
+// ======================================================================
+// Checksum sources:
+//   isnet-general-use : MD5 fc16ebd8b0c10d971d3513d564d01e29 (rembg), SHA-256 computed locally
+//   rmbg-1.4          : SHA-256 from HuggingFace
+//   rmbg-2.0          : SHA-256 from rembg source (bria_rmbg.py)
+// ======================================================================
+
 pub const PLACEHOLDER_SHA256: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 
-// Computed from src-tauri/models/u2netp.onnx
 pub const U2NETP_SHA256: &str =
     "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8";
+
+pub const ISNET_GENERAL_USE_SHA256: &str =
+    "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a";
+
+pub const RMBG_1_4_SHA256: &str =
+    "8cafcf770b06757c4eaced21b1a88e57fd2b66de01b8045f35f01535ba742e0f";
+
+pub const RMBG_2_0_SHA256: &str =
+    "5b486f08200f513f460da46dd701db5fbb47d79b4be4b708a19444bcd4e79958";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntry {
@@ -79,8 +94,7 @@ fn registry() -> &'static [ModelEntry] {
                 license: "Apache-2.0".into(),
                 source: "xuebinqin/DIS via rembg".into(),
                 download_url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx".into(),
-                // TODO(phase 10): pin real SHA-256 of the exact file above.
-                sha256: PLACEHOLDER_SHA256.into(),
+                sha256: ISNET_GENERAL_USE_SHA256.into(),
                 bundled: false,
             },
             ModelEntry {
@@ -94,8 +108,7 @@ fn registry() -> &'static [ModelEntry] {
                 license: "CC BY-NC 4.0".into(),
                 source: "briaai/RMBG-1.4".into(),
                 download_url: "https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx".into(),
-                // TODO(phase 10): pin real SHA-256 of the exact file above.
-                sha256: PLACEHOLDER_SHA256.into(),
+                sha256: RMBG_1_4_SHA256.into(),
                 bundled: false,
             },
             ModelEntry {
@@ -110,8 +123,7 @@ fn registry() -> &'static [ModelEntry] {
                 source: "briaai/RMBG-2.0 via rembg".into(),
                 // Public mirror; official HuggingFace release is gated.
                 download_url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/bria-rmbg-2.0.onnx".into(),
-                // TODO(phase 10): pin real SHA-256 of the exact file above.
-                sha256: PLACEHOLDER_SHA256.into(),
+                sha256: RMBG_2_0_SHA256.into(),
                 bundled: false,
             },
         ]
@@ -359,7 +371,7 @@ mod tests {
         let m = find_model("isnet-general-use").unwrap();
         assert_eq!(m.input_size, 1024);
         assert_eq!(m.mean, vec![0.485, 0.456, 0.406]);
-        assert!(is_placeholder_checksum(&m.sha256));
+        assert!(!is_placeholder_checksum(&m.sha256));
         assert!(!m.bundled);
     }
 
@@ -369,7 +381,7 @@ mod tests {
         assert_eq!(m.input_size, 1024);
         assert_eq!(m.mean, vec![0.5, 0.5, 0.5]);
         assert_eq!(m.std, vec![1.0, 1.0, 1.0]);
-        assert!(is_placeholder_checksum(&m.sha256));
+        assert!(!is_placeholder_checksum(&m.sha256));
     }
 
     #[test]
@@ -377,7 +389,7 @@ mod tests {
         let m = find_model("rmbg-2.0").unwrap();
         assert_eq!(m.input_size, 1024);
         assert_eq!(m.mean, vec![0.485, 0.456, 0.406]);
-        assert!(is_placeholder_checksum(&m.sha256));
+        assert!(!is_placeholder_checksum(&m.sha256));
     }
 
     #[test]

@@ -38,6 +38,12 @@ export function useTauriFileDrop(): TauriFileDropState {
 
     setup();
 
+    if (import.meta.env.DEV && import.meta.env.VITE_E2E === "1") {
+      window.__yabrInjectDrop = (paths: string[]) => {
+        setPaths(paths);
+      };
+    }
+
     return () => {
       cancelled = true;
       unsubs.forEach((unsub) => unsub());

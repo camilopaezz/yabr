@@ -64,8 +64,8 @@ export function invokeListModels(): Promise<ModelMeta[]> {
   return tauriInvoke("list_models");
 }
 
-export function invokeDownloadModel(model_id: string): Promise<void> {
-  return tauriInvoke("download_model", { model_id });
+export function invokeDownloadModel(modelId: string): Promise<void> {
+  return tauriInvoke("download_model", { modelId });
 }
 
 export function listenModelDownload(
@@ -97,7 +97,7 @@ export function invokeSetConfig(config: Config): Promise<void> {
 }
 
 export function invokeRemoveImageBackground(args: RemoveBackgroundArgs): Promise<void> {
-  return tauriInvoke("remove_image_background", args);
+  return tauriInvoke("remove_image_background", { args });
 }
 
 export function invokePickOutputDir(): Promise<string | null> {

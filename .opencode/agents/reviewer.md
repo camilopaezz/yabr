@@ -1,7 +1,7 @@
 ---
 description: Reviews yabr app code for bugs, errors, bad logic, and verifies phase deliverables are met per docs/plan.md. Use after builder completes a phase to gate quality before commit.
 mode: subagent
-model: clinepass/cline-pass/deepseek-v4-pro
+model: deepseek/deepseek-v4-pro
 variant: high
 permission:
   edit: deny

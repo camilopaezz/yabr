@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -57,3 +60,30 @@ jobs:
       - name: build and test Rust
         working-directory: ./src-tauri
         run: cargo build && cargo test
+
+  e2e:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: install frontend dependencies
+        run: bun install
+
+      - name: install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: run mocked-frontend E2E suite
+        run: xvfb-run bun run test:e2e
