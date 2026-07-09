@@ -45,6 +45,15 @@ export function FileDropZone() {
     });
   }, [paths, outputDir, mode]);
 
+  useEffect(() => {
+    const current = imageStore.getState().current;
+    if (!current || current.status === "processing") return;
+    const outputPath = deriveOutputPath(current.inputPath, outputDir, mode);
+    if (outputPath !== current.outputPath) {
+      imageStore.getState().patch({ outputPath });
+    }
+  }, [mode, outputDir]);
+
   return (
     <div
       style={{

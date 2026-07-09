@@ -1,7 +1,8 @@
 import { imageStore, useImageStore, type ImageItem } from "../stores/imageStore";
-import { useSettingsStore } from "../stores/settingsStore";
+import { settingsStore, useSettingsStore } from "../stores/settingsStore";
 import { ProgressBar } from "./ProgressBar";
 import { invokeCancelInference, invokeRemoveImageBackground } from "../lib/tauri";
+import { deriveOutputPath } from "../lib/path";
 
 function statusLabel(item: ImageItem): string {
   switch (item.status) {
@@ -37,12 +38,20 @@ export function ImagePanel() {
 
   const handleProcess = async () => {
     if (isProcessing) return;
-    imageStore.getState().patch({ status: "processing", progress: 0, stage: "starting", error: null });
+    const outputDir = settingsStore.getState().outputDir;
+    const outputPath = deriveOutputPath(current.inputPath, outputDir, mode);
+    imageStore.getState().patch({
+      status: "processing",
+      progress: 0,
+      stage: "starting",
+      error: null,
+      outputPath,
+    });
     try {
       await invokeRemoveImageBackground({
         id: current.id,
         inputPath: current.inputPath,
-        outputPath: current.outputPath ?? "",
+        outputPath,
         modelId: mode,
       });
     } catch (err) {
