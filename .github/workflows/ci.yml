@@ -54,6 +54,9 @@ jobs:
       - name: install frontend dependencies
         run: bun install
 
+      - name: check model registry is generated from Rust
+        run: bun run gen:models:check
+
       - name: build frontend
         run: bun run build
 

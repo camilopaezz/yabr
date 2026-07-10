@@ -7,10 +7,18 @@
     "core:default",
     "opener:default",
     "fs:default",
+    "dialog:default",
     "fs:allow-exists",
-    "dialog:default"
-  ],
-  "scope": {
-    "fs:allow-exists": [{ "path": "$HOME/**" }]
-  }
+    "fs:allow-read-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
+      ]
+    }
+  ]
 }

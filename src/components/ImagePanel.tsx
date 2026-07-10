@@ -1,8 +1,13 @@
-import { imageStore, useImageStore, type ImageItem } from "../stores/imageStore";
-import { settingsStore, useSettingsStore } from "../stores/settingsStore";
+import { useState } from "react";
+import { useImageStore, type ImageItem } from "../stores/imageStore";
 import { ProgressBar } from "./ProgressBar";
-import { invokeCancelInference, invokeRemoveImageBackground } from "../lib/tauri";
-import { deriveOutputPath } from "../lib/path";
+import {
+  cancelProcess,
+  clearCurrent,
+  prodCancelDeps,
+  prodStartProcessDeps,
+  startProcess,
+} from "../lib/currentImage";
 
 function statusLabel(item: ImageItem): string {
   switch (item.status) {
@@ -23,8 +28,7 @@ function statusLabel(item: ImageItem): string {
 
 export function ImagePanel() {
   const current = useImageStore((state) => state.current);
-  const clear = useImageStore((state) => state.clear);
-  const mode = useSettingsStore((state) => state.mode);
+  const [starting, setStarting] = useState(false);
 
   if (!current) {
     return (
@@ -35,35 +39,20 @@ export function ImagePanel() {
   }
 
   const isProcessing = current.status === "processing";
+  const busy = isProcessing || starting;
 
   const handleProcess = async () => {
-    if (isProcessing) return;
-    const outputDir = settingsStore.getState().outputDir;
-    const outputPath = deriveOutputPath(current.inputPath, outputDir, mode);
-    imageStore.getState().patch({
-      status: "processing",
-      progress: 0,
-      stage: "starting",
-      error: null,
-      outputPath,
-    });
+    if (busy) return;
+    setStarting(true);
     try {
-      await invokeRemoveImageBackground({
-        id: current.id,
-        inputPath: current.inputPath,
-        outputPath,
-        modelId: mode,
-      });
-    } catch (err) {
-      console.error("[ImagePanel] process failed:", err);
-      if (imageStore.getState().current?.status === "processing") {
-        imageStore.getState().patch({ status: "error", stage: null, error: "command failed" });
-      }
+      await startProcess(prodStartProcessDeps());
+    } finally {
+      setStarting(false);
     }
   };
 
   const handleCancel = () => {
-    invokeCancelInference().catch(() => {});
+    cancelProcess(prodCancelDeps());
   };
 
   return (
@@ -95,8 +84,8 @@ export function ImagePanel() {
           {current.inputPath.split(/[\\/]/).pop() ?? current.inputPath}
         </span>
         <button
-          onClick={clear}
-          disabled={isProcessing}
+          onClick={() => clearCurrent()}
+          disabled={busy}
           style={{
             marginLeft: 8,
             padding: "2px 8px",
@@ -116,9 +105,9 @@ export function ImagePanel() {
         {current.error && `: ${current.error}`}
       </div>
 
-      {!isProcessing && (
+      {!busy && (
         <button
-          onClick={handleProcess}
+          onClick={() => void handleProcess()}
           style={{ marginTop: 8, width: "100%" }}
         >
           {current.status === "done" ? "Re-run" : "Process"}

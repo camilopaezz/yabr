@@ -1,19 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useTauriFileDrop } from "../lib/useTauriFileDrop";
-import { imageStore } from "../stores/imageStore";
+import { acceptDrop, syncOutputPath } from "../lib/currentImage";
 import { useSettingsStore } from "../stores/settingsStore";
-import { deriveOutputPath } from "../lib/path";
-
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "bmp"]);
-
-function getExtension(path: string): string {
-  const dot = path.lastIndexOf(".");
-  return dot >= 0 ? path.slice(dot + 1).toLowerCase() : "";
-}
-
-function isImageFile(path: string): boolean {
-  return IMAGE_EXTENSIONS.has(getExtension(path));
-}
 
 export function FileDropZone() {
   const { isDragging, paths } = useTauriFileDrop();
@@ -26,32 +14,11 @@ export function FileDropZone() {
     if (lastProcessedRef.current === paths) return;
     lastProcessedRef.current = paths;
 
-    const imagePaths = paths.filter(isImageFile);
-    if (imagePaths.length === 0) return;
-    if (imageStore.getState().current?.status === "processing") return;
-
-    const inputPath = imagePaths[0];
-    const id = crypto.randomUUID();
-    const outputPath = deriveOutputPath(inputPath, outputDir, mode);
-
-    imageStore.getState().set({
-      id,
-      inputPath,
-      outputPath,
-      status: "ready",
-      progress: 0,
-      stage: null,
-      error: null,
-    });
+    acceptDrop(paths, { mode, outputDir });
   }, [paths, outputDir, mode]);
 
   useEffect(() => {
-    const current = imageStore.getState().current;
-    if (!current || current.status === "processing") return;
-    const outputPath = deriveOutputPath(current.inputPath, outputDir, mode);
-    if (outputPath !== current.outputPath) {
-      imageStore.getState().patch({ outputPath });
-    }
+    syncOutputPath({ mode, outputDir });
   }, [mode, outputDir]);
 
   return (

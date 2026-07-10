@@ -131,8 +131,13 @@ fn registry() -> &'static [ModelEntry] {
     REGISTRY.as_slice()
 }
 
-pub fn find_model(model_id: &str) -> Result<&'static ModelEntry, AppError> {
+/// Static model registry (no download state). Used by inference and codegen.
+pub fn static_registry() -> &'static [ModelEntry] {
     registry()
+}
+
+pub fn find_model(model_id: &str) -> Result<&'static ModelEntry, AppError> {
+    static_registry()
         .iter()
         .find(|m| m.id == model_id)
         .ok_or_else(|| AppError::Model(format!("unknown model: {}", model_id)))
@@ -152,7 +157,7 @@ pub fn model_cache_path(app: &AppHandle, model: &ModelEntry) -> Result<PathBuf, 
 
 pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
     let cache_dir = model_cache_dir(app)?;
-    Ok(registry()
+    Ok(static_registry()
         .iter()
         .map(|m| {
             let downloaded = m.bundled || cache_dir.join(&m.file).exists();

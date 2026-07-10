@@ -4,7 +4,7 @@ import { ModeSelector } from "./components/ModeSelector";
 import { ImagePanel } from "./components/ImagePanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { initEventListeners } from "./stores/progressStore";
+import { initCurrentImageListeners } from "./lib/currentImage";
 import { useImageStore } from "./stores/imageStore";
 import { settingsStore } from "./stores/settingsStore";
 import { invokeDetectGpu, invokeGetConfig, invokeRunBenchmark } from "./lib/tauri";
@@ -17,10 +17,15 @@ function App() {
   const current = useImageStore((state) => state.current);
 
   useEffect(() => {
+    let cancelled = false;
     let unsubscribe: (() => void) | undefined;
 
-    initEventListeners().then((unsub) => {
-      unsubscribe = unsub;
+    initCurrentImageListeners().then((unsub) => {
+      if (cancelled) {
+        unsub();
+      } else {
+        unsubscribe = unsub;
+      }
     });
 
     const initialize = async () => {
@@ -51,6 +56,7 @@ function App() {
     initialize();
 
     return () => {
+      cancelled = true;
       unsubscribe?.();
     };
   }, []);

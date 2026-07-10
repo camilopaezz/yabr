@@ -14,11 +14,11 @@ PR1  Deepen job de remoción (Rust)          ← Strong, base  [GRILLING CERRADO
   │
   ├─ PR1b  Export PNG+alpha ⊂ PR1 (acordado)
   │
-PR2  Ciclo de vida CurrentImage (frontend)  ← Strong  [GRILLING EN CURSO]
+PR2  Ciclo de vida CurrentImage (frontend)  ← Strong  [GRILLING CERRADO]
   │
 PR3  Contrato IPC unificado                 ← Worth exploring; desbloquea e2e honestos
   │
-PR4  Seam único del registry de modelos     ← Worth exploring
+PR4  Seam único del registry de modelos     ← Worth exploring  [IMPLEMENTADO]
   │
 PR5  Política EP + Config                   ← Worth exploring; toca first-run y Settings
 ```
@@ -160,32 +160,44 @@ Infer: `inference::with_session` real (sin port en interface pública).
 
 **Fuerza:** Strong · **Deps:** in-process (+ IPC/FS/dialog como adapters)  
 **Branch sugerida:** `arch/deepen-current-image`  
-**Grilling:** en curso.
+**Grilling:** cerrado + implementado.
 
 ### Objetivo
 
 Concentrar política de la imagen actual: accept drop, path, start process (**overwrite A18**), apply events, cancel/clear. Componentes = vistas.
 
-### Archivos previstos
-
-- Nuevo p.ej. `src/lib/currentImage.ts` (o `src/domain/…`)
-- `FileDropZone.tsx`, `ImagePanel.tsx`
-- `progressStore.ts` → absorbido o thin bridge a `applyEvent`
-- `imageStore.ts`, `path.ts`, **cablear** `overwrite.ts`
-- Adapters: `exists` / `ask` (plugin-fs + dialog), invoke/listen vía `tauri.ts`
-
-### Criterios de done
-
-- [ ] `deriveOutputPath` no en 3 call sites sueltos
-- [ ] overwrite en el camino real de process
-- [ ] Vitest del módulo; e2e smoke verde
-- [ ] Components sin lógica de negocio pesada
-
-### Notas de grilling (PR2)
+### Acuerdos de grilling (fuente de verdad)
 
 | Decisión | Acuerdo |
 |----------|---------|
-| _(pendiente)_ | |
+| Forma del módulo | **A** — funciones de dominio en `src/lib/currentImage.ts`; `imageStore` como estado; components solo llaman/suscriben. |
+| Deps startProcess | **A** — struct: `exists`, `ask`, `removeBackground`, `getSettings`. Prod = plugin-fs + dialog + tauri + settingsStore. |
+| progressStore | **A** — apply* + init listeners en currentImage; **borrar** `progressStore.ts`; migrar tests. |
+| Drop / path | **A** — `acceptDrop` + `syncOutputPath` + `startProcess` recalcula path; `path.ts` helper. |
+| Overwrite declined | **A** — no invoke; no `processing`; item queda ready/done sin error. Orden: settings → path → overwrite → processing → invoke. |
+| Tests | **A** — `currentImage.test.ts` principal; migrar progressStore tests; mantener path/overwrite; imageStore smoke. |
+
+### Archivos previstos
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/lib/currentImage.ts` | **Nuevo** — dominio |
+| `src/lib/currentImage.test.ts` | **Nuevo** |
+| `src/components/FileDropZone.tsx` | Solo UI + acceptDrop/sync |
+| `src/components/ImagePanel.tsx` | Solo UI + startProcess/cancel/clear |
+| `src/App.tsx` | init listeners desde currentImage |
+| `src/stores/progressStore.ts` | **Borrar** |
+| `src/stores/progressStore.test.ts` | **Borrar** (migrado) |
+| `src/lib/path.ts`, `overwrite.ts` | Helpers; overwrite cableado vía startProcess |
+| Prod adapter | exists (`@tauri-apps/plugin-fs`), ask (`@tauri-apps/plugin-dialog`) |
+
+### Criterios de done
+
+- [x] `deriveOutputPath` no en 3 call sites de components
+- [x] overwrite en el camino real de process
+- [x] Vitest currentImage; e2e smoke verde
+- [x] Components sin lógica de negocio pesada
+- [x] progressStore eliminado
 
 ---
 
@@ -211,16 +223,31 @@ Un contract: eventos, job shape, EP strings. Adapters: prod Tauri + e2e mock.
 
 ## PR4 — Seam del registry de modelos
 
-**Fuerza:** Worth exploring · **Branch:** `arch/model-registry-seam`
+**Fuerza:** Worth exploring · **Branch:** `arch/model-registry-seam`  
+**Grilling:** cerrado — listo para implementar.
 
 ### Objetivo
 
-Rust = única SoT de metadatos/SHA. FE: tipos + `list_models`. Sin `REGISTRY` divergente.
+Rust = única SoT de metadatos/SHA. FE: tipos generados + `list_models` en runtime. Sin `REGISTRY` a mano con SHA distintos.
+
+### Acuerdos de grilling (PR4)
+
+| Decisión | Acuerdo |
+|----------|---------|
+| Qué queda en el FE | Generar registry/tipos TS desde Rust (cero drift). |
+| Mecánica de gen | Script/bin → archivo **commiteado**; prebuild/CI + check de frescura. Estáticos sí; `downloaded` no. |
+| Consumo | Tipos + e2e/helpers desde generado; **UI runtime = list_models**. |
+| Implementación | Bin Rust `gen_model_registry` en src-tauri; `bun run gen:models`. |
+| Layout FE | **`models.generated.ts`** (solo gen) + **`models.ts`** thin re-export / `ModelMeta` + `downloaded`. |
 
 ### Criterios de done
 
-- [ ] No hay segundo registry con SHA distintos
-- [ ] E2e no documenta checksums falsos como prod-like
+- [x] Bin genera `src/lib/models.generated.ts` desde `models.rs` registry
+- [x] No hay segundo registry a mano con SHA distintos / placeholders
+- [x] E2e mocks usan generado (SHA reales)
+- [x] ModeSelector sigue con `list_models` en runtime
+- [x] `gen:models` + `gen:models:check` en CI
+- [x] `bun run test` / `build` / typecheck e2e verdes
 
 ---
 
@@ -278,4 +305,4 @@ PR4 (registry) ── independiente
 
 ---
 
-*Última actualización: 2026-07-09 · grilling PR1 cerrado · siguiente paso: implementar PR1.*
+*Última actualización: 2026-07-09 · PR1+PR2 hechos · grilling PR4 cerrado · siguiente: implementar PR4.*

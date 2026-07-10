@@ -1,0 +1,454 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { imageStore } from "../stores/imageStore";
+import {
+  acceptDrop,
+  applyDone,
+  applyError,
+  applyProgress,
+  cancelProcess,
+  clearCurrent,
+  initCurrentImageListeners,
+  isProcessBusy,
+  resetProcessGateForTests,
+  startProcess,
+  syncOutputPath,
+  type StartProcessDeps,
+} from "./currentImage";
+
+const handlers: Record<string, (event: { payload: unknown }) => void> = {};
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (eventName: string, handler: (event: { payload: unknown }) => void) => {
+    handlers[eventName] = handler;
+    return () => {
+      delete handlers[eventName];
+    };
+  }),
+  invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  exists: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  ask: vi.fn(),
+}));
+
+function makeReadyItem(overrides: Partial<{ id: string; inputPath: string; outputPath: string | null }> = {}) {
+  return {
+    id: overrides.id ?? "img-1",
+    inputPath: overrides.inputPath ?? "/tmp/in.png",
+    outputPath: overrides.outputPath ?? "/tmp/in-nobg-u2netp.png",
+    status: "ready" as const,
+    progress: 0,
+    stage: null,
+    error: null,
+  };
+}
+
+function makeDeps(overrides: Partial<StartProcessDeps> = {}): StartProcessDeps {
+  return {
+    exists: vi.fn().mockResolvedValue(false),
+    ask: vi.fn().mockResolvedValue(true),
+    removeBackground: vi.fn().mockResolvedValue(undefined),
+    getSettings: () => ({ mode: "u2netp", outputDir: null }),
+    ...overrides,
+  };
+}
+
+describe("currentImage", () => {
+  beforeEach(() => {
+    resetProcessGateForTests();
+    imageStore.setState({ current: null });
+    Object.keys(handlers).forEach((key) => delete handlers[key]);
+  });
+
+  describe("acceptDrop", () => {
+    it("filters non-images and returns false when none", () => {
+      const ok = acceptDrop(["/tmp/notes.txt", "/tmp/readme.md"], {
+        mode: "u2netp",
+        outputDir: null,
+      });
+      expect(ok).toBe(false);
+      expect(imageStore.getState().current).toBeNull();
+    });
+
+    it("ignores drop while processing", () => {
+      imageStore.getState().set({
+        ...makeReadyItem(),
+        status: "processing",
+      });
+      const ok = acceptDrop(["/tmp/new.jpg"], { mode: "u2netp", outputDir: null });
+      expect(ok).toBe(false);
+      expect(imageStore.getState().current?.inputPath).toBe("/tmp/in.png");
+    });
+
+    it("creates a ready item from the first image path", () => {
+      const ok = acceptDrop(["/tmp/notes.txt", "/tmp/photo.jpg", "/tmp/other.png"], {
+        mode: "u2netp",
+        outputDir: "/out",
+      });
+      expect(ok).toBe(true);
+      const current = imageStore.getState().current;
+      expect(current?.inputPath).toBe("/tmp/photo.jpg");
+      expect(current?.status).toBe("ready");
+      expect(current?.progress).toBe(0);
+      expect(current?.stage).toBeNull();
+      expect(current?.error).toBeNull();
+      expect(current?.outputPath).toBe("/out/photo-nobg-u2netp.png");
+      expect(current?.id).toBeTruthy();
+    });
+  });
+
+  describe("syncOutputPath", () => {
+    it("updates outputPath when mode or outputDir change", () => {
+      imageStore.getState().set(makeReadyItem({ outputPath: "/tmp/in-nobg-u2netp.png" }));
+      syncOutputPath({ mode: "rmbg-2.0", outputDir: "/exports" });
+      expect(imageStore.getState().current?.outputPath).toBe("/exports/in-nobg-rmbg-2.0.png");
+    });
+
+    it("skips when processing", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ outputPath: "/tmp/old.png" }),
+        status: "processing",
+      });
+      syncOutputPath({ mode: "rmbg-2.0", outputDir: "/exports" });
+      expect(imageStore.getState().current?.outputPath).toBe("/tmp/old.png");
+    });
+
+    it("no-ops when no current image", () => {
+      syncOutputPath({ mode: "u2netp", outputDir: null });
+      expect(imageStore.getState().current).toBeNull();
+    });
+  });
+
+  describe("startProcess", () => {
+    it("returns no-image when empty", async () => {
+      const deps = makeDeps();
+      const result = await startProcess(deps);
+      expect(result).toBe("no-image");
+      expect(deps.removeBackground).not.toHaveBeenCalled();
+    });
+
+    it("returns already-processing when busy", async () => {
+      imageStore.getState().set({ ...makeReadyItem(), status: "processing" });
+      const deps = makeDeps();
+      const result = await startProcess(deps);
+      expect(result).toBe("already-processing");
+      expect(deps.removeBackground).not.toHaveBeenCalled();
+    });
+
+    it("skips when overwrite declined without setting processing", async () => {
+      imageStore.getState().set(makeReadyItem());
+      const deps = makeDeps({
+        exists: vi.fn().mockResolvedValue(true),
+        ask: vi.fn().mockResolvedValue(false),
+      });
+      const result = await startProcess(deps);
+      expect(result).toBe("skipped");
+      expect(deps.removeBackground).not.toHaveBeenCalled();
+      expect(imageStore.getState().current?.status).toBe("ready");
+    });
+
+    it("skips overwrite decline while leaving done status", async () => {
+      imageStore.getState().set({ ...makeReadyItem(), status: "done" });
+      const deps = makeDeps({
+        exists: vi.fn().mockResolvedValue(true),
+        ask: vi.fn().mockResolvedValue(false),
+      });
+      const result = await startProcess(deps);
+      expect(result).toBe("skipped");
+      expect(imageStore.getState().current?.status).toBe("done");
+      expect(deps.removeBackground).not.toHaveBeenCalled();
+    });
+
+    it("invokes removeBackground with correct job when overwrite ok", async () => {
+      imageStore.getState().set(
+        makeReadyItem({
+          id: "job-9",
+          inputPath: "/home/user/pic.jpg",
+          outputPath: null,
+        }),
+      );
+      const removeBackground = vi.fn().mockResolvedValue(undefined);
+      const deps = makeDeps({
+        removeBackground,
+        getSettings: () => ({ mode: "rmbg-2.0", outputDir: "/exports" }),
+      });
+      const result = await startProcess(deps);
+      expect(result).toBe("started");
+      expect(removeBackground).toHaveBeenCalledWith({
+        id: "job-9",
+        inputPath: "/home/user/pic.jpg",
+        outputPath: "/exports/pic-nobg-rmbg-2.0.png",
+        modelId: "rmbg-2.0",
+      });
+      expect(imageStore.getState().current?.status).toBe("processing");
+      expect(imageStore.getState().current?.stage).toBe("starting");
+      expect(imageStore.getState().current?.outputPath).toBe("/exports/pic-nobg-rmbg-2.0.png");
+    });
+
+    it("returns failed and patches command failed when invoke throws", async () => {
+      imageStore.getState().set(makeReadyItem({ id: "fail-1" }));
+      const deps = makeDeps({
+        removeBackground: vi.fn().mockRejectedValue(new Error("boom")),
+      });
+      const result = await startProcess(deps);
+      expect(result).toBe("failed");
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("error");
+      expect(current?.error).toBe("command failed");
+      expect(current?.stage).toBeNull();
+    });
+
+    it("aborts after overwrite if image was replaced during dialog", async () => {
+      imageStore.getState().set(makeReadyItem({ id: "orig" }));
+      let resolveAsk!: (v: boolean) => void;
+      const ask = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveAsk = resolve;
+          }),
+      );
+      const removeBackground = vi.fn().mockResolvedValue(undefined);
+      const deps = makeDeps({
+        exists: vi.fn().mockResolvedValue(true),
+        ask,
+        removeBackground,
+      });
+
+      const pending = startProcess(deps);
+      await vi.waitFor(() => expect(ask).toHaveBeenCalled());
+      expect(isProcessBusy()).toBe(true);
+
+      // Gate blocks drop while confirming.
+      expect(acceptDrop(["/tmp/other.png"], { mode: "u2netp", outputDir: null })).toBe(false);
+
+      // Hostile race: store replaced while dialog open (bypassing acceptDrop gate).
+      imageStore.getState().set(makeReadyItem({ id: "replaced", inputPath: "/tmp/other.png" }));
+      resolveAsk(true);
+
+      const result = await pending;
+      expect(result).toBe("skipped");
+      expect(removeBackground).not.toHaveBeenCalled();
+      expect(imageStore.getState().current?.id).toBe("replaced");
+      expect(imageStore.getState().current?.status).toBe("ready");
+      expect(isProcessBusy()).toBe(false);
+    });
+
+    it("second startProcess during overwrite returns already-processing", async () => {
+      imageStore.getState().set(makeReadyItem({ id: "solo" }));
+      let resolveAsk!: (v: boolean) => void;
+      const ask = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveAsk = resolve;
+          }),
+      );
+      const removeBackground = vi.fn().mockResolvedValue(undefined);
+      const deps = makeDeps({
+        exists: vi.fn().mockResolvedValue(true),
+        ask,
+        removeBackground,
+      });
+
+      const first = startProcess(deps);
+      await vi.waitFor(() => expect(ask).toHaveBeenCalled());
+      const second = await startProcess(makeDeps());
+      expect(second).toBe("already-processing");
+
+      resolveAsk(true);
+      expect(await first).toBe("started");
+      expect(removeBackground).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("cancelProcess / clearCurrent", () => {
+    it("fires cancelInference without awaiting", () => {
+      const cancelInference = vi.fn().mockResolvedValue(undefined);
+      cancelProcess({ cancelInference });
+      expect(cancelInference).toHaveBeenCalled();
+    });
+
+    it("clears the current image when idle", () => {
+      imageStore.getState().set(makeReadyItem());
+      expect(clearCurrent()).toBe(true);
+      expect(imageStore.getState().current).toBeNull();
+    });
+
+    it("refuses clear while processing", () => {
+      imageStore.getState().set({ ...makeReadyItem(), status: "processing" });
+      expect(clearCurrent()).toBe(false);
+      expect(imageStore.getState().current?.status).toBe("processing");
+    });
+  });
+
+  describe("applyProgress / applyDone / applyError", () => {
+    it("patches progress for matching id only when processing", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-1" }),
+        status: "processing",
+      });
+      applyProgress({ id: "img-1", stage: "inferring", pct: 55 });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("processing");
+      expect(current?.stage).toBe("inferring");
+      expect(current?.progress).toBe(55);
+    });
+
+    it("does not resurrect ready via late progress", () => {
+      imageStore.getState().set(makeReadyItem({ id: "img-1" }));
+      applyProgress({ id: "img-1", stage: "inferring", pct: 55 });
+      expect(imageStore.getState().current?.status).toBe("ready");
+      expect(imageStore.getState().current?.progress).toBe(0);
+    });
+
+    it("ignores progress for different id", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-1" }),
+        status: "processing",
+      });
+      applyProgress({ id: "other", stage: "inferring", pct: 55 });
+      expect(imageStore.getState().current?.progress).toBe(0);
+    });
+
+    it("sets done status and output path", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-2" }),
+        status: "processing",
+        progress: 80,
+        stage: "encoding",
+      });
+      applyDone({ id: "img-2", output_path: "/tmp/out.png" });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("done");
+      expect(current?.outputPath).toBe("/tmp/out.png");
+      expect(current?.progress).toBe(100);
+      expect(current?.stage).toBeNull();
+    });
+
+    it("ignores done for different id", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-2" }),
+        status: "processing",
+      });
+      applyDone({ id: "other", output_path: "/tmp/out.png" });
+      expect(imageStore.getState().current?.status).toBe("processing");
+    });
+
+    it("sets error status and message", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-3" }),
+        status: "processing",
+      });
+      applyError({ id: "img-3", message: "out of memory" });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("error");
+      expect(current?.error).toBe("out of memory");
+      expect(current?.stage).toBeNull();
+    });
+
+    it("ignores error for different id", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-3" }),
+        status: "processing",
+      });
+      applyError({ id: "other", message: "out of memory" });
+      expect(imageStore.getState().current?.status).toBe("processing");
+    });
+
+    it("sets cancelled when error message is cancelled", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-4" }),
+        status: "processing",
+      });
+      applyError({ id: "img-4", message: "cancelled" });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("cancelled");
+      expect(current?.error).toBeNull();
+      expect(current?.stage).toBeNull();
+    });
+  });
+
+  describe("initCurrentImageListeners", () => {
+    it("patches progress on inference:progress for the current image", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-1" }),
+        status: "processing",
+      });
+      await initCurrentImageListeners();
+      handlers["inference:progress"]({
+        payload: { id: "img-1", stage: "inferring", pct: 55 },
+      });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("processing");
+      expect(current?.stage).toBe("inferring");
+      expect(current?.progress).toBe(55);
+    });
+
+    it("ignores progress events for a different id", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-1" }),
+        status: "processing",
+      });
+      await initCurrentImageListeners();
+      handlers["inference:progress"]({
+        payload: { id: "other", stage: "inferring", pct: 55 },
+      });
+      expect(imageStore.getState().current?.progress).toBe(0);
+    });
+
+    it("sets done status and output path on inference:done", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-2" }),
+        status: "processing",
+        progress: 80,
+        stage: "encoding",
+      });
+      await initCurrentImageListeners();
+      handlers["inference:done"]({
+        payload: { id: "img-2", output_path: "/tmp/out.png" },
+      });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("done");
+      expect(current?.outputPath).toBe("/tmp/out.png");
+      expect(current?.progress).toBe(100);
+      expect(current?.stage).toBeNull();
+    });
+
+    it("sets error status and message on inference:error", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-3" }),
+        status: "processing",
+        progress: 20,
+        stage: "decoding",
+      });
+      await initCurrentImageListeners();
+      handlers["inference:error"]({
+        payload: { id: "img-3", message: "out of memory" },
+      });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("error");
+      expect(current?.error).toBe("out of memory");
+      expect(current?.stage).toBeNull();
+    });
+
+    it("sets cancelled status when error message is cancelled", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-4" }),
+        status: "processing",
+        progress: 20,
+        stage: "decoding",
+      });
+      await initCurrentImageListeners();
+      handlers["inference:error"]({
+        payload: { id: "img-4", message: "cancelled" },
+      });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("cancelled");
+      expect(current?.error).toBeNull();
+      expect(current?.stage).toBeNull();
+    });
+  });
+});
