@@ -87,9 +87,22 @@ export function syncOutputPath(settings: ProcessSettings): void {
   const current = imageStore.getState().current;
   if (!current || isProcessBusy()) return;
   const outputPath = deriveOutputPath(current.inputPath, settings.outputDir, settings.mode);
-  if (outputPath !== current.outputPath) {
-    imageStore.getState().patch({ outputPath });
+  if (outputPath === current.outputPath) return;
+
+  // If mode/output dir change after a successful run, the derived path is not
+  // the last result file — drop "done" so compare / Show in folder do not lie.
+  if (current.status === "done") {
+    imageStore.getState().patch({
+      outputPath,
+      status: "ready",
+      progress: 0,
+      stage: null,
+      error: null,
+    });
+    return;
   }
+
+  imageStore.getState().patch({ outputPath });
 }
 
 export async function startProcess(deps: StartProcessDeps): Promise<StartProcessResult> {

@@ -117,6 +117,21 @@ describe("currentImage", () => {
       expect(imageStore.getState().current?.outputPath).toBe("/tmp/old.png");
     });
 
+    it("resets done → ready when derived output path changes", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ outputPath: "/tmp/in-nobg-u2netp.png" }),
+        status: "done",
+        progress: 100,
+        stage: "done",
+      });
+      syncOutputPath({ mode: "rmbg-2.0", outputDir: "/exports" });
+      const current = imageStore.getState().current;
+      expect(current?.outputPath).toBe("/exports/in-nobg-rmbg-2.0.png");
+      expect(current?.status).toBe("ready");
+      expect(current?.progress).toBe(0);
+      expect(current?.stage).toBeNull();
+    });
+
     it("no-ops when no current image", () => {
       syncOutputPath({ mode: "u2netp", outputDir: null });
       expect(imageStore.getState().current).toBeNull();

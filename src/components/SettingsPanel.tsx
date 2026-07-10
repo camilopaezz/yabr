@@ -7,10 +7,18 @@ import {
   invokeRunBenchmark,
   invokeSetEp,
 } from "../lib/tauri";
+import { epLabel } from "../lib/epLabel";
 
 export type SettingsPanelProps = {
   visible: boolean;
 };
+
+function formatVram(bytes: number): string {
+  const gib = bytes / (1024 ** 3);
+  if (gib >= 1) return `${gib.toFixed(1)} GiB`;
+  const mib = bytes / (1024 ** 2);
+  return `${mib.toFixed(0)} MiB`;
+}
 
 export function SettingsPanel({ visible }: SettingsPanelProps) {
   const {
@@ -69,66 +77,66 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
   if (!visible) return null;
 
   return (
-    <div
-      style={{
-        padding: 16,
-        borderRadius: 8,
-        border: "1px solid rgba(128, 128, 128, 0.3)",
-      }}
-    >
-      <h3 style={{ margin: "0 0 12px" }}>Settings</h3>
-
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ display: "block", marginBottom: 4 }}>Execution provider</label>
-        <select value={ep ?? ""} onChange={(e) => handleEpChange(e.target.value)}>
+    <div className="settings-panel">
+      <div className="settings-field">
+        <label htmlFor="settings-ep">Execution provider</label>
+        <select
+          id="settings-ep"
+          className="settings-select"
+          value={ep ?? ""}
+          onChange={(e) => void handleEpChange(e.target.value)}
+        >
           <option value="" disabled>
             Choose EP
           </option>
           {gpuInfo?.available_eps.map((epOption) => (
             <option key={epOption} value={epOption}>
-              {epOption}
+              {epLabel(epOption)}
             </option>
           ))}
         </select>
       </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ display: "block", marginBottom: 4 }}>Output directory</label>
+      <div className="settings-field">
+        <label>Output directory</label>
         <button
-          onClick={handlePickOutputDir}
+          type="button"
+          onClick={() => void handlePickOutputDir()}
+          title={outputDir ?? "Same as input (default)"}
           style={{
-            width: "100%",
             textAlign: "left",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
-          title={outputDir ?? "Same as input (default)"}
         >
           {outputDir ?? "Choose output directory"}
         </button>
         {!outputDir && (
-          <div style={{ fontSize: "0.8rem", opacity: 0.6, marginTop: 4 }}>
-            Same as input (default)
-          </div>
+          <div className="settings-hint">Same as input (default)</div>
         )}
       </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={handleBenchmark} disabled={loading}>
+      <div className="settings-field">
+        <button type="button" onClick={() => void handleBenchmark()} disabled={loading}>
           {loading ? "Benchmarking…" : "Re-run benchmark"}
         </button>
       </div>
 
       {gpuInfo && (
-        <div style={{ fontSize: "0.9rem", opacity: 0.8 }}>
+        <div className="settings-meta">
           <div>GPU: {gpuInfo.vendor}</div>
-          <div>VRAM: {gpuInfo.vram_bytes ? `${gpuInfo.vram_bytes} bytes` : "Unknown"}</div>
+          <div>
+            VRAM:{" "}
+            {gpuInfo.vram_bytes != null
+              ? formatVram(gpuInfo.vram_bytes)
+              : "Unknown"}
+          </div>
         </div>
       )}
 
       {benchmarkResult && (
-        <div style={{ fontSize: "0.9rem", opacity: 0.8, marginTop: 8 }}>
+        <div className="settings-meta">
           <div>Winner: {benchmarkResult.winner_ep}</div>
           {benchmarkResult.ep_latencies.map((latency) => (
             <div key={latency.ep}>

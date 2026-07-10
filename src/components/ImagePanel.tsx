@@ -1,9 +1,9 @@
 import { useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useImageStore, type ImageItem } from "../stores/imageStore";
 import { ProgressBar } from "./ProgressBar";
 import {
   cancelProcess,
-  clearCurrent,
   prodCancelDeps,
   prodStartProcessDeps,
   startProcess,
@@ -30,19 +30,14 @@ export function ImagePanel() {
   const current = useImageStore((state) => state.current);
   const [starting, setStarting] = useState(false);
 
-  if (!current) {
-    return (
-      <p style={{ textAlign: "center", opacity: 0.6 }}>
-        No image yet. Drop one above to get started.
-      </p>
-    );
-  }
-
-  const isProcessing = current.status === "processing";
-  const busy = isProcessing || starting;
+  const isProcessing = current?.status === "processing";
+  const busy = Boolean(isProcessing || starting);
+  const hasImage = Boolean(current);
+  const isDone = current?.status === "done";
+  const canShowInFolder = isDone && Boolean(current?.outputPath);
 
   const handleProcess = async () => {
-    if (busy) return;
+    if (busy || !current) return;
     setStarting(true);
     try {
       await startProcess(prodStartProcessDeps());
@@ -55,70 +50,60 @@ export function ImagePanel() {
     cancelProcess(prodCancelDeps());
   };
 
-  return (
-    <div
-      style={{
-        padding: 12,
-        borderRadius: 8,
-        border: "1px solid rgba(128, 128, 128, 0.3)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 8,
-        }}
-      >
-        <span
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1,
-            fontSize: "0.9rem",
-          }}
-          title={current.inputPath}
-        >
-          {current.inputPath.split(/[\\/]/).pop() ?? current.inputPath}
-        </span>
-        <button
-          onClick={() => clearCurrent()}
-          disabled={busy}
-          style={{
-            marginLeft: 8,
-            padding: "2px 8px",
-            fontSize: "0.75rem",
-          }}
-        >
-          Remove
-        </button>
-      </div>
+  const handleShowInFolder = async () => {
+    if (!current?.outputPath) return;
+    try {
+      await revealItemInDir(current.outputPath);
+    } catch (err) {
+      console.error("reveal in folder failed", err);
+    }
+  };
 
-      {isProcessing && (
+  // While processing, ProgressBar already shows stage + % — skip duplicate status line.
+  const statusText = !current
+    ? "No image selected"
+    : isProcessing
+      ? null
+      : `${statusLabel(current)}${current.error ? `: ${current.error}` : ""}`;
+
+  return (
+    <div className="image-panel">
+      {current && isProcessing && (
         <ProgressBar stage={current.stage} progress={current.progress} />
       )}
 
-      <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: 4 }}>
-        {statusLabel(current)}
-        {current.error && `: ${current.error}`}
-      </div>
-
-      {!busy && (
-        <button
-          onClick={() => void handleProcess()}
-          style={{ marginTop: 8, width: "100%" }}
+      {statusText !== null && (
+        <div
+          className={`image-panel-status${current?.status === "error" ? " is-error" : ""}`}
         >
-          {current.status === "done" ? "Re-run" : "Process"}
-        </button>
+          {statusText}
+        </div>
       )}
 
-      {isProcessing && (
-        <button onClick={handleCancel} style={{ marginTop: 8, width: "100%" }}>
-          Cancel
-        </button>
-      )}
+      <div className="image-panel-actions">
+        {canShowInFolder && !isProcessing && (
+          <button type="button" onClick={() => void handleShowInFolder()}>
+            Show in folder
+          </button>
+        )}
+
+        {/* Always mount Process when idle so it stays visible (disabled if no image). */}
+        {!isProcessing ? (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => void handleProcess()}
+            disabled={!hasImage || starting}
+            aria-disabled={!hasImage || starting}
+          >
+            {starting ? "Starting…" : isDone ? "Re-run" : "Process"}
+          </button>
+        ) : (
+          <button type="button" className="btn-primary" onClick={handleCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
     </div>
   );
 }

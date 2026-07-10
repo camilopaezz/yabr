@@ -54,7 +54,7 @@ test.describe("yabr", () => {
 
   test("end-to-end mocked flow", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Drag & drop an image here")).toBeVisible();
+    await expect(page.getByText("Drop an image here")).toBeVisible();
 
     const inputPath = "/yabr/e2e/fixtures/sample.png";
     const expectedOutputPath = "/yabr/e2e/output/sample-nobg-u2netp.png";
@@ -93,13 +93,15 @@ test.describe("yabr", () => {
 
     await expect(page.getByText("Done")).toBeVisible();
 
-    const canvas = page.locator("canvas");
-    await expect(canvas).toBeVisible();
-    const size = await canvas.evaluate((el) => ({
-      width: (el as HTMLCanvasElement).width,
-      height: (el as HTMLCanvasElement).height,
+    // Done state shows before/after comparison (img layers or slider).
+    const previewImg = page.locator(".app-preview img").first();
+    await expect(previewImg).toBeVisible();
+    const size = await previewImg.evaluate((el) => ({
+      width: (el as HTMLImageElement).naturalWidth,
+      height: (el as HTMLImageElement).naturalHeight,
     }));
     expect(size.width).toBeGreaterThan(0);
     expect(size.height).toBeGreaterThan(0);
   });
 });
+

@@ -81,29 +81,14 @@ export function ModeSelector() {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      <h3 style={{ margin: 0, fontSize: "1rem" }}>Quality mode</h3>
+    <div className="mode-selector">
+      <h3 className="app-rail-section-title">Quality mode</h3>
       {models.map((model) => {
         const available = model.bundled || model.downloaded;
         return (
           <label
             key={model.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: 8,
-              borderRadius: 6,
-              border: "1px solid rgba(128, 128, 128, 0.3)",
-              opacity: available ? 1 : 0.7,
-              cursor: "pointer",
-            }}
+            className="mode-option"
             title={`${model.name} — ${model.input_size}px`}
           >
             <input
@@ -113,8 +98,8 @@ export function ModeSelector() {
               checked={mode === model.id}
               onChange={() => handleSelect(model)}
             />
-            <span style={{ flex: 1 }}>{model.name}</span>
-            <span style={{ fontSize: "0.75rem", opacity: 0.7 }}>
+            <span className="mode-option-name">{model.name}</span>
+            <span className="mode-option-badge">
               {available ? "Available" : "Download"}
             </span>
           </label>
@@ -122,60 +107,19 @@ export function ModeSelector() {
       })}
 
       {downloading && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-        >
-          <div
-            style={{
-              width: 320,
-              padding: 24,
-              borderRadius: 12,
-              background: "var(--bg, #fff)",
-            }}
-          >
-            <h3 style={{ margin: "0 0 12px", fontSize: "1rem" }}>
-              Downloading {downloading.name}
-            </h3>
-            <div
-              style={{
-                width: "100%",
-                height: 8,
-                backgroundColor: "rgba(128, 128, 128, 0.2)",
-                borderRadius: 4,
-                overflow: "hidden",
-              }}
-            >
+        <div className="download-modal-backdrop">
+          <div className="download-modal-card">
+            <h3>Downloading {downloading.name}</h3>
+            <div className="progress-bar-track">
               <div
-                style={{
-                  width: `${downloadProgress}%`,
-                  height: "100%",
-                  backgroundColor: "#396cd8",
-                  transition: "width 0.2s ease",
-                }}
+                className="progress-bar-fill"
+                style={{ width: `${downloadProgress}%` }}
               />
             </div>
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: "0.85rem",
-                textAlign: "center",
-              }}
-            >
+            <div className="download-modal-pct">
               {Math.round(downloadProgress)}%
             </div>
-            <button
-              type="button"
-              onClick={handleCancel}
-              style={{ marginTop: 16, width: "100%" }}
-            >
+            <button type="button" onClick={handleCancel}>
               Cancel
             </button>
           </div>
