@@ -5,6 +5,7 @@ mod events;
 mod gpu;
 pub mod image_io;
 pub mod inference;
+pub mod job;
 pub mod models;
 pub mod pipeline;
 pub mod processing;

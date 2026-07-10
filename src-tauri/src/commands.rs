@@ -2,14 +2,61 @@ use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::config::Config;
 use crate::error::AppError;
+use crate::events::{
+    InferenceDonePayload, InferenceErrorPayload, InferenceProgressPayload, INFERENCE_DONE,
+    INFERENCE_ERROR, INFERENCE_PROGRESS,
+};
 use crate::gpu::{BenchmarkResult, GpuInfo};
+use crate::job::{JobDeps, JobSink, ProcessingJob};
 use crate::models::ModelMeta;
-use crate::processing::{ProcessingJob, ProcessingState};
+use crate::processing::ProcessingState;
+
+struct AppJobSink {
+    app: AppHandle,
+    id: String,
+}
+
+impl JobSink for AppJobSink {
+    fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError> {
+        self.app
+            .emit(
+                INFERENCE_PROGRESS,
+                InferenceProgressPayload {
+                    id: self.id.clone(),
+                    stage: stage.to_string(),
+                    pct,
+                },
+            )
+            .map_err(|e| AppError::Inference(e.to_string()))
+    }
+
+    fn on_done(&self, output_path: &str) -> Result<(), AppError> {
+        self.app
+            .emit(
+                INFERENCE_DONE,
+                InferenceDonePayload {
+                    id: self.id.clone(),
+                    output_path: output_path.to_string(),
+                },
+            )
+            .map_err(|e| AppError::Inference(e.to_string()))
+    }
+
+    fn on_error(&self, message: &str) {
+        let _ = self.app.emit(
+            INFERENCE_ERROR,
+            InferenceErrorPayload {
+                id: self.id.clone(),
+                message: message.to_string(),
+            },
+        );
+    }
+}
 
 #[tauri::command]
 pub async fn detect_gpu() -> Result<GpuInfo, AppError> {
@@ -65,19 +112,56 @@ pub async fn remove_image_background(
     let processing_state = state.inner().clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let job_id = args.id.clone();
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            crate::processing::run_one(&app_handle, &processing_state, &args)
+            let sink = AppJobSink {
+                app: app_handle.clone(),
+                id: args.id.clone(),
+            };
+            let app_for_ep = app_handle.clone();
+            let app_for_ready = app_handle.clone();
+            let app_for_load = app_handle.clone();
+            let execution_provider = || {
+                Ok(crate::config::load_config(&app_for_ep)?.execution_provider())
+            };
+            let model_is_ready = |model: &crate::models::ModelEntry| {
+                if model.bundled {
+                    Ok(true)
+                } else {
+                    Ok(crate::models::model_cache_path(&app_for_ready, model)?.exists())
+                }
+            };
+            let load_model_bytes = |model: &crate::models::ModelEntry| {
+                if model.bundled {
+                    Ok(crate::inference::U2NETP_MODEL_BYTES.to_vec())
+                } else {
+                    Ok(std::fs::read(crate::models::model_cache_path(
+                        &app_for_load,
+                        model,
+                    )?)?)
+                }
+            };
+            let deps = JobDeps {
+                sink: &sink,
+                execution_provider: &execution_provider,
+                model_is_ready: &model_is_ready,
+                load_model_bytes: &load_model_bytes,
+            };
+            crate::job::run(&args, &processing_state, &deps)
         }));
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(AppError::Cancelled)) => {
-                crate::processing::emit_error_event(&app_handle, &args.id, "cancelled");
-            }
-            Ok(Err(e)) => {
-                crate::processing::emit_error_event(&app_handle, &args.id, &e.to_string());
+            Ok(Err(_)) => {
+                // job::run already called sink.on_error
             }
             Err(_) => {
-                crate::processing::emit_error_event(&app_handle, &args.id, "worker panic");
+                let _ = app_handle.emit(
+                    INFERENCE_ERROR,
+                    InferenceErrorPayload {
+                        id: job_id,
+                        message: "worker panic".to_string(),
+                    },
+                );
             }
         }
     })
