@@ -337,22 +337,67 @@ mod tests {
         hex::encode(hasher.finalize())
     }
 
+    /// Tiny HTTP fixture for download tests.
+    ///
+    /// Reads the full request headers before writing a response (required for
+    /// reliable behavior with hyper/reqwest on Windows) and serves multiple
+    /// connections so production download retries still hit a live peer.
     async fn spawn_local_server(body: Vec<u8>) -> (tokio::task::AbortHandle, u16) {
+        use tokio::io::AsyncWriteExt;
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
-                body.len()
-            );
-            use tokio::io::AsyncWriteExt;
-            stream.write_all(response.as_bytes()).await.unwrap();
-            stream.write_all(&body).await.unwrap();
-            stream.flush().await.unwrap();
-            let _ = stream.shutdown().await;
+            // Match download_to_file's retry budget (3 attempts).
+            for _ in 0..3 {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                if read_http_headers(&mut stream).await.is_err() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                if stream.write_all(response.as_bytes()).await.is_err() {
+                    continue;
+                }
+                if stream.write_all(&body).await.is_err() {
+                    continue;
+                }
+                let _ = stream.flush().await;
+                let _ = stream.shutdown().await;
+            }
         });
         (handle.abort_handle(), port)
+    }
+
+    async fn read_http_headers(stream: &mut tokio::net::TcpStream) -> std::io::Result<()> {
+        use tokio::io::AsyncReadExt;
+
+        let mut buf = [0u8; 512];
+        let mut request = Vec::new();
+        loop {
+            let n = stream.read(&mut buf).await?;
+            if n == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "client closed before headers finished",
+                ));
+            }
+            request.extend_from_slice(&buf[..n]);
+            if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                return Ok(());
+            }
+            // Guard against a non-HTTP client filling memory.
+            if request.len() > 64 * 1024 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "request headers too large",
+                ));
+            }
+        }
     }
 
     #[test]
@@ -486,8 +531,13 @@ mod tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
-        let result = download_to_file(&model, &path, |_| {}).await;
-        assert!(result.is_err());
+        let err = download_to_file(&model, &path, |_| {})
+            .await
+            .expect_err("download should fail on SHA mismatch");
+        assert!(
+            err.to_string().contains("SHA-256 mismatch"),
+            "expected SHA-256 mismatch, got: {err}"
+        );
         assert!(!path.exists());
         handle.abort();
     }
