@@ -430,6 +430,43 @@ button.titlebar-close:hover:not(:disabled) {
 .mode-option-badge {
   font-size: 0.72rem;
   color: var(--fg-muted);
+  flex-shrink: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-option-model {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+
+button.mode-option-download {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--accent);
+  cursor: pointer;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.mode-option-download:hover {
+  text-decoration: underline;
+}
+
+button.mode-option-download:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
 }
 
 .mode-option input {
@@ -566,16 +603,29 @@ button.titlebar-close:hover:not(:disabled) {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   overflow: hidden;
-  padding: 16px;
+  /* Tight inset so the image can own the pane. */
+  padding: 10px;
+  /* Size queries: children fit to available stage, not 100vw/100vh. */
+  container-type: size;
+  container-name: preview-stage;
 }
 
-.preview-image-frame {
+/*
+ * Shared fit box: max size inside the stage while preserving --img-ar
+ * (natural width/height, set from JS). Avoids letterboxing from undersized
+ * viewport-based max-width/max-height hacks.
+ */
+.preview-image-frame,
+.compare-slider {
+  --img-ar: 1;
   position: relative;
-  /* Fit inside stage (padding already applied by .preview-stage). */
+  box-sizing: border-box;
+  /* Largest rect with this aspect ratio that fits the stage content box. */
+  width: min(100cqw, calc(100cqh * var(--img-ar)));
+  height: min(100cqh, calc(100cqw / var(--img-ar)));
   max-width: 100%;
   max-height: 100%;
   min-width: 0;
@@ -584,6 +634,7 @@ button.titlebar-close:hover:not(:disabled) {
   overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  line-height: 0;
   /* checkerboard for alpha */
   background-color: #fff;
   background-image:
@@ -593,73 +644,18 @@ button.titlebar-close:hover:not(:disabled) {
     linear-gradient(-45deg, transparent 75%, #ccc 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  line-height: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  .preview-image-frame {
-    background-color: #2a2a2e;
-    background-image:
-      linear-gradient(45deg, #3a3a40 25%, transparent 25%),
-      linear-gradient(-45deg, #3a3a40 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #3a3a40 75%),
-      linear-gradient(-45deg, transparent 75%, #3a3a40 75%);
-    background-size: 16px 16px;
-    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  }
-}
-
-/* Match compare-slider sizing so ready/processing previews aren't cropped. */
-.preview-image-frame img {
-  display: block;
-  max-width: min(100%, calc(100vw - var(--rail-width) - 48px));
-  max-height: calc(100vh - var(--titlebar-height) - 48px);
+/* Before AR is known, fall back to intrinsic image sizing. */
+.preview-image-frame-fallback {
   width: auto;
   height: auto;
-  object-fit: contain;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
-
-/* Comparison slider — stacked imgs + clip-path (no measure thrash / selection). */
-.compare-slider {
-  position: relative;
-  display: inline-block;
   max-width: 100%;
   max-height: 100%;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  touch-action: none;
-  cursor: col-resize;
-  line-height: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-user-drag: none;
-  -webkit-touch-callout: none;
-  outline: none;
-  background-color: #fff;
-  background-image:
-    linear-gradient(45deg, #ccc 25%, transparent 25%),
-    linear-gradient(-45deg, #ccc 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #ccc 75%),
-    linear-gradient(-45deg, transparent 75%, #ccc 75%);
-  background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-}
-
-.compare-slider:focus {
-  outline: none;
-}
-
-.compare-slider:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
 }
 
 @media (prefers-color-scheme: dark) {
+  .preview-image-frame,
   .compare-slider {
     background-color: #2a2a2e;
     background-image:
@@ -672,14 +668,54 @@ button.titlebar-close:hover:not(:disabled) {
   }
 }
 
-/* After image sizes the box; before is overlaid 1:1 and clipped. */
-.compare-img {
+.preview-image-frame img {
   display: block;
-  max-width: min(100%, calc(100vw - var(--rail-width) - 48px));
-  max-height: calc(100vh - var(--titlebar-height) - 48px);
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.preview-image-frame-fallback img {
   width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+}
+
+/* Comparison slider — both layers fill the same AR box (pixel-aligned). */
+.compare-slider {
+  touch-action: none;
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  outline: none;
+}
+
+.compare-slider:focus {
+  outline: none;
+}
+
+.compare-slider:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Both layers share the exact same box — no fill vs contain mismatch. */
+.compare-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
@@ -687,19 +723,11 @@ button.titlebar-close:hover:not(:disabled) {
 }
 
 .compare-img-after {
-  position: relative;
   z-index: 0;
 }
 
 .compare-img-before {
-  position: absolute;
-  inset: 0;
   z-index: 1;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  object-fit: fill;
 }
 
 .compare-handle {

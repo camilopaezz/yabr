@@ -8,8 +8,18 @@ import { TitleBar } from "./components/TitleBar";
 import { acceptDrop, initCurrentImageListeners, syncOutputPath } from "./lib/currentImage";
 import { useTauriFileDrop } from "./lib/useTauriFileDrop";
 import { useImageStore } from "./stores/imageStore";
+import {
+  FALLBACK_DEFAULT_MODE,
+  PREFERRED_DEFAULT_MODE,
+  resolveMode,
+} from "./lib/models";
 import { settingsStore, useSettingsStore } from "./stores/settingsStore";
-import { invokeDetectGpu, invokeGetConfig, invokeRunBenchmark } from "./lib/tauri";
+import {
+  invokeDetectGpu,
+  invokeGetConfig,
+  invokeListModels,
+  invokeRunBenchmark,
+} from "./lib/tauri";
 import "./App.css";
 
 function App() {
@@ -40,6 +50,7 @@ function App() {
     const initialize = async () => {
       try {
         const config = await invokeGetConfig();
+        if (cancelled) return;
         settingsStore.setState({
           ep: config.execution_provider,
           outputDir: config.output_dir,
@@ -47,16 +58,39 @@ function App() {
         if (!config.execution_provider) {
           setFirstRun(true);
           const gpuInfo = await invokeDetectGpu();
+          if (cancelled) return;
           settingsStore.setState({ gpuInfo });
           const benchmark = await invokeRunBenchmark();
+          if (cancelled) return;
           settingsStore.setState({ benchmarkResult: benchmark });
           const updated = await invokeGetConfig();
+          if (cancelled) return;
           settingsStore.setState({ ep: updated.execution_provider });
         }
       } catch (err) {
         console.error("first-run initialization failed", err);
-        settingsStore.setState({ ep: "cpu" });
-      } finally {
+        if (!cancelled) {
+          settingsStore.setState({ ep: "cpu" });
+        }
+      }
+
+      // Resolve quality mode before the UI becomes interactive so Process never
+      // sees a preferred-but-not-downloaded model (e.g. Balanced+).
+      try {
+        const models = await invokeListModels();
+        if (!cancelled) {
+          settingsStore.setState({
+            mode: resolveMode(PREFERRED_DEFAULT_MODE, models),
+          });
+        }
+      } catch (err) {
+        console.error("failed to list models during init", err);
+        if (!cancelled) {
+          settingsStore.setState({ mode: FALLBACK_DEFAULT_MODE });
+        }
+      }
+
+      if (!cancelled) {
         setFirstRun(false);
         setReady(true);
       }

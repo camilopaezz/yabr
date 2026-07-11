@@ -6,7 +6,7 @@ import type {
   JobTimings,
   RuntimeInfo,
 } from "../lib/tauri";
-import type { ModelMode } from "../lib/models";
+import { FALLBACK_DEFAULT_MODE, type ModelMode } from "../lib/models";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -33,7 +33,8 @@ export type SettingsActions = {
 };
 
 export const settingsStore = createStore<SettingsState & SettingsActions>((set) => ({
-  mode: "u2netp",
+  // Bundled Turbo until App / ModeSelector reconcile against list_models.
+  mode: FALLBACK_DEFAULT_MODE,
   outputDir: null,
   ep: null,
   theme: "system",
