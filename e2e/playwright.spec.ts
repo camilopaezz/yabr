@@ -9,7 +9,7 @@ const FIXTURE_PATH = path.join(__dirname, "fixtures", "sample.png");
 
 const DEFAULT_CONFIG = {
   config: {
-    execution_provider: "CPUExecutionProvider",
+    execution_provider: "cpu",
     model_id: "u2netp",
     output_dir: "/yabr/e2e/output",
     platform: "linux",
@@ -17,14 +17,14 @@ const DEFAULT_CONFIG = {
   gpuInfo: {
     vendor: "NVIDIA",
     vram_bytes: 4_000_000_000,
-    available_eps: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    available_eps: ["cuda", "cpu"],
   },
   benchmarkResult: {
     ep_latencies: [
-      { ep: "CPUExecutionProvider", seconds: 0.5 },
-      { ep: "CUDAExecutionProvider", seconds: 0.1 },
+      { ep: "cpu", seconds: 0.5 },
+      { ep: "cuda", seconds: 0.1 },
     ],
-    winner_ep: "CPUExecutionProvider",
+    winner_ep: "cpu",
   },
   models: MODEL_REGISTRY.map((m) => ({
     ...m,

@@ -1,23 +1,22 @@
-/** Map ORT execution provider ids to short chip labels. */
+/** Map backend EP ids (`cpu`/`cuda`/`directml`) to short chip labels. */
 export function epLabel(ep: string | null | undefined): string {
   if (!ep) return "—";
 
-  const normalized = ep.trim();
-  switch (normalized) {
-    case "CUDAExecutionProvider":
+  switch (ep.trim().toLowerCase()) {
+    case "cudaexecutionprovider":
     case "cuda":
       return "CUDA";
-    case "CPUExecutionProvider":
+    case "cpuexecutionprovider":
     case "cpu":
       return "CPU";
-    case "DmlExecutionProvider":
+    case "dmlexecutionprovider":
     case "dml":
+    case "directml":
       return "DirectML";
-    case "CoreMLExecutionProvider":
+    case "coremlexecutionprovider":
     case "coreml":
       return "CoreML";
     default:
-      // Known short aliases above; unknown ids stay opaque as "—".
       return "—";
   }
 }

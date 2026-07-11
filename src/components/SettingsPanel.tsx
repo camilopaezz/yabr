@@ -137,10 +137,10 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
 
       {benchmarkResult && (
         <div className="settings-meta">
-          <div>Winner: {benchmarkResult.winner_ep}</div>
+          <div>Winner: {epLabel(benchmarkResult.winner_ep)}</div>
           {benchmarkResult.ep_latencies.map((latency) => (
             <div key={latency.ep}>
-              {latency.ep}: {latency.seconds.toFixed(3)}s
+              {epLabel(latency.ep)}: {latency.seconds.toFixed(3)}s
             </div>
           ))}
         </div>

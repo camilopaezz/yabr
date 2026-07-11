@@ -16,8 +16,13 @@ export function invoke<T>(
       return Promise.resolve(state.config.gpuInfo as T);
     case "run_benchmark":
       return Promise.resolve(state.config.benchmarkResult as T);
-    case "set_ep":
+    case "set_ep": {
+      const ep = args?.ep;
+      if (typeof ep === "string") {
+        state.config.config.execution_provider = ep.toLowerCase();
+      }
       return Promise.resolve(undefined as T);
+    }
     case "list_models":
       return Promise.resolve(state.config.models as T);
     case "download_model":
