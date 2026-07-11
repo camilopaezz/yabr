@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { useSettingsStore } from "../stores/settingsStore";
+import { settingsStore, useSettingsStore } from "../stores/settingsStore";
+import {
+  FALLBACK_DEFAULT_MODE,
+  isModelReady,
+  resolveMode,
+  type ModelMeta,
+  type ModelMode,
+} from "../lib/models";
 import {
   invokeListModels,
   invokeDownloadModel,
   listenModelDownload,
-  type ModelMeta,
-  type ModelMode,
 } from "../lib/tauri";
 
 export function ModeSelector() {
@@ -19,10 +24,25 @@ export function ModeSelector() {
   );
   const isCancelledRef = useRef(false);
 
+  const applyModels = (list: ModelMeta[]) => {
+    setModels(list);
+    const current = settingsStore.getState().mode;
+    const next = resolveMode(current, list);
+    if (next !== current) {
+      setMode(next);
+    }
+  };
+
   useEffect(() => {
     invokeListModels()
-      .then(setModels)
-      .catch((err: unknown) => console.error("failed to list models", err));
+      .then(applyModels)
+      .catch((err: unknown) => {
+        console.error("failed to list models", err);
+        // Catalog unavailable: force bundled Turbo so Process cannot target a
+        // preferred-but-unverified model.
+        setMode(FALLBACK_DEFAULT_MODE);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only reconcile
   }, []);
 
   useEffect(() => {
@@ -54,8 +74,10 @@ export function ModeSelector() {
           setMode(downloading.id as ModelMode);
         }
         invokeListModels()
-          .then(setModels)
-          .catch((err: unknown) => console.error("failed to refresh models", err));
+          .then(applyModels)
+          .catch((err: unknown) =>
+            console.error("failed to refresh models", err),
+          );
       })
       .catch((err: unknown) => {
         console.error("download failed", err);
@@ -71,17 +93,24 @@ export function ModeSelector() {
       cleanedUp = true;
       unsubscribe?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- download session keyed by model
   }, [downloading, setMode]);
 
-  const handleSelect = (model: ModelMeta) => {
-    if (model.bundled || model.downloaded) {
-      setMode(model.id as ModelMode);
-      return;
-    }
+  const startDownload = (model: ModelMeta) => {
+    if (downloading || isModelReady(model)) return;
     isCancelledRef.current = false;
     setDownloadProgress(0);
     setDownloadStage("download");
     setDownloading(model);
+  };
+
+  const handleSelect = (model: ModelMeta) => {
+    if (downloading) return;
+    if (isModelReady(model)) {
+      setMode(model.id as ModelMode);
+      return;
+    }
+    startDownload(model);
   };
 
   const handleCancel = () => {
@@ -95,12 +124,12 @@ export function ModeSelector() {
     <div className="mode-selector">
       <h3 className="app-rail-section-title">Quality mode</h3>
       {models.map((model) => {
-        const available = model.bundled || model.downloaded;
+        const available = isModelReady(model);
         return (
           <label
             key={model.id}
             className="mode-option"
-            title={`${model.name} — ${model.input_size}px`}
+            title={`${model.name} (${model.id}) — ${model.input_size}px`}
           >
             <input
               type="radio"
@@ -110,9 +139,24 @@ export function ModeSelector() {
               onChange={() => handleSelect(model)}
             />
             <span className="mode-option-name">{model.name}</span>
-            <span className="mode-option-badge">
-              {available ? "Available" : "Download"}
-            </span>
+            {available ? (
+              <span className="mode-option-badge mode-option-model">
+                {model.id}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="mode-option-badge mode-option-download"
+                disabled={Boolean(downloading)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  startDownload(model);
+                }}
+              >
+                Download
+              </button>
+            )}
           </label>
         );
       })}
