@@ -15,10 +15,19 @@ export type PreviewCanvasProps = {
   isDragging?: boolean;
 };
 
+function mimeFromPath(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "image/png";
+}
+
 async function loadImageUrl(path: string | null): Promise<string | null> {
   if (!path) return null;
   const bytes = await readFile(path);
-  const blob = new Blob([bytes], { type: "image/png" });
+  const blob = new Blob([bytes], { type: mimeFromPath(path) });
   return URL.createObjectURL(blob);
 }
 
@@ -74,12 +83,44 @@ function useObjectUrl(path: string | null): string | null {
   return url;
 }
 
+/** Natural width/height ratio once the image has loaded (null while pending). */
+function useImageAspectRatio(url: string | null): number | null {
+  const [ratio, setRatio] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!url) {
+      setRatio(null);
+      return;
+    }
+
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setRatio(img.naturalWidth / img.naturalHeight);
+      }
+    };
+    img.onerror = () => {
+      if (!cancelled) setRatio(null);
+    };
+    img.src = url;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  return ratio;
+}
+
 type CompareSliderProps = {
   inputUrl: string;
   outputUrl: string;
+  aspectRatio: number;
 };
 
-function CompareSlider({ inputUrl, outputUrl }: CompareSliderProps) {
+function CompareSlider({ inputUrl, outputUrl, aspectRatio }: CompareSliderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(50);
   // Keep drag state in a ref so pointermove does not re-bind listeners.
@@ -146,6 +187,7 @@ function CompareSlider({ inputUrl, outputUrl }: CompareSliderProps) {
     <div
       ref={containerRef}
       className="compare-slider"
+      style={{ ["--img-ar" as string]: String(aspectRatio) }}
       onPointerDown={onPointerDown}
       role="slider"
       aria-label="Before and after comparison"
@@ -192,6 +234,11 @@ export function PreviewCanvas({
   const outputUrl = useObjectUrl(canCompare ? outputPath : null);
   const showCompare = Boolean(canCompare && inputPath && outputPath && inputUrl && outputUrl);
 
+  // Prefer output AR for compare (same pixel size as processed frame); fall back to input.
+  const inputAr = useImageAspectRatio(inputUrl);
+  const outputAr = useImageAspectRatio(showCompare ? outputUrl : null);
+  const aspectRatio = (showCompare ? outputAr : null) ?? inputAr;
+
   if (!inputPath) {
     return (
       <div className={`preview-canvas${isDragging ? " is-dragging" : ""}`}>
@@ -208,10 +255,22 @@ export function PreviewCanvas({
   return (
     <div className={`preview-canvas${isDragging ? " is-dragging" : ""}`}>
       <div className="preview-stage">
-        {showCompare ? (
-          <CompareSlider inputUrl={inputUrl!} outputUrl={outputUrl!} />
+        {showCompare && aspectRatio != null ? (
+          <CompareSlider
+            inputUrl={inputUrl!}
+            outputUrl={outputUrl!}
+            aspectRatio={aspectRatio}
+          />
+        ) : inputUrl && aspectRatio != null ? (
+          <div
+            className="preview-image-frame"
+            style={{ ["--img-ar" as string]: String(aspectRatio) }}
+          >
+            <img src={inputUrl} alt="Input" draggable={false} />
+          </div>
         ) : inputUrl ? (
-          <div className="preview-image-frame">
+          // Aspect ratio still loading — show image with fallback sizing.
+          <div className="preview-image-frame preview-image-frame-fallback">
             <img src={inputUrl} alt="Input" draggable={false} />
           </div>
         ) : null}
