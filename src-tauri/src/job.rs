@@ -1,4 +1,7 @@
+use std::time::Instant;
+
 use crate::error::AppError;
+use crate::events::{JobTimings, StageTiming};
 use crate::processing::ProcessingState;
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -12,7 +15,7 @@ pub struct ProcessingJob {
 
 pub trait JobSink {
     fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError>;
-    fn on_done(&self, output_path: &str) -> Result<(), AppError>;
+    fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError>;
     fn on_error(&self, message: &str);
 }
 
@@ -21,6 +24,27 @@ pub struct JobDeps<'a> {
     pub execution_provider: &'a dyn Fn() -> Result<String, AppError>,
     pub model_is_ready: &'a dyn Fn(&crate::models::ModelEntry) -> Result<bool, AppError>,
     pub load_model_bytes: &'a dyn Fn(&crate::models::ModelEntry) -> Result<Vec<u8>, AppError>,
+}
+
+struct StageTimer {
+    stage: &'static str,
+    start: Instant,
+}
+
+impl StageTimer {
+    fn start(stage: &'static str) -> Self {
+        Self {
+            stage,
+            start: Instant::now(),
+        }
+    }
+
+    fn finish(self) -> StageTiming {
+        StageTiming {
+            stage: self.stage.into(),
+            seconds: self.start.elapsed().as_secs_f64(),
+        }
+    }
 }
 
 pub fn run(
@@ -40,6 +64,9 @@ fn run_inner(
     state: &ProcessingState,
     deps: &JobDeps<'_>,
 ) -> Result<(), AppError> {
+    let job_start = Instant::now();
+    let mut stages = Vec::new();
+
     state.check_cancel()?;
 
     let model = crate::models::find_model(&job.model_id)?;
@@ -52,17 +79,22 @@ fn run_inner(
 
     deps.sink.on_progress("decoding", 10.0)?;
     state.check_cancel()?;
+    let timer = StageTimer::start("decoding");
     let image_bytes = std::fs::read(&job.input_path)?;
     let img = crate::image_io::decode(&image_bytes)?;
     let original_size = (img.width(), img.height());
     let rgb = img.to_rgb8();
+    stages.push(timer.finish());
 
     deps.sink.on_progress("preprocessing", 20.0)?;
     state.check_cancel()?;
+    let timer = StageTimer::start("preprocessing");
     let tensor = crate::pipeline::preprocess(model, &img)?;
+    stages.push(timer.finish());
 
     deps.sink.on_progress("inferring", 50.0)?;
     state.check_cancel()?;
+    let timer = StageTimer::start("inferring");
     let ep = (deps.execution_provider)()?;
     let output = crate::inference::with_session(
         &job.model_id,
@@ -70,17 +102,26 @@ fn run_inner(
         || (deps.load_model_bytes)(model),
         |session| crate::inference::run(session, &tensor),
     )?;
+    stages.push(timer.finish());
 
     deps.sink.on_progress("postprocessing", 80.0)?;
     state.check_cancel()?;
+    let timer = StageTimer::start("postprocessing");
     let alpha = crate::pipeline::postprocess(&job.model_id, original_size, &output)?;
+    stages.push(timer.finish());
 
     deps.sink.on_progress("encoding", 95.0)?;
     state.check_cancel()?;
+    let timer = StageTimer::start("encoding");
     let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;
     std::fs::write(&job.output_path, output_bytes)?;
+    stages.push(timer.finish());
 
-    deps.sink.on_done(&job.output_path)?;
+    let timings = JobTimings {
+        stages,
+        total_seconds: job_start.elapsed().as_secs_f64(),
+    };
+    deps.sink.on_done(&job.output_path, &timings)?;
     Ok(())
 }
 
@@ -92,6 +133,7 @@ mod tests {
     struct Recorder {
         progress: Mutex<Vec<(String, f32)>>,
         done: Mutex<Option<String>>,
+        timings: Mutex<Option<JobTimings>>,
         errors: Mutex<Vec<String>>,
     }
 
@@ -100,6 +142,7 @@ mod tests {
             Self {
                 progress: Mutex::new(Vec::new()),
                 done: Mutex::new(None),
+                timings: Mutex::new(None),
                 errors: Mutex::new(Vec::new()),
             }
         }
@@ -114,8 +157,9 @@ mod tests {
             Ok(())
         }
 
-        fn on_done(&self, output_path: &str) -> Result<(), AppError> {
+        fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
             *self.done.lock().unwrap() = Some(output_path.to_string());
+            *self.timings.lock().unwrap() = Some(timings.clone());
             Ok(())
         }
 
@@ -181,8 +225,8 @@ mod tests {
             Ok(())
         }
 
-        fn on_done(&self, output_path: &str) -> Result<(), AppError> {
-            self.inner.on_done(output_path)
+        fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
+            self.inner.on_done(output_path, timings)
         }
 
         fn on_error(&self, message: &str) {
@@ -336,6 +380,23 @@ mod tests {
             recorder.done.lock().unwrap().as_deref(),
             Some(output.to_string_lossy().as_ref())
         );
+        let timings = recorder.timings.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            timings
+                .stages
+                .iter()
+                .map(|t| t.stage.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "decoding",
+                "preprocessing",
+                "inferring",
+                "postprocessing",
+                "encoding",
+            ]
+        );
+        assert!(timings.stages.iter().all(|t| t.seconds >= 0.0));
+        assert!(timings.total_seconds >= 0.0);
         assert!(recorder.errors.lock().unwrap().is_empty());
         assert!(output.exists());
         let out_bytes = std::fs::read(&output).unwrap();

@@ -8,8 +8,8 @@ use tauri_plugin_dialog::DialogExt;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::events::{
-    InferenceDonePayload, InferenceErrorPayload, InferenceProgressPayload, INFERENCE_DONE,
-    INFERENCE_ERROR, INFERENCE_PROGRESS,
+    InferenceDonePayload, InferenceErrorPayload, InferenceProgressPayload, JobTimings,
+    RuntimeInfo, INFERENCE_DONE, INFERENCE_ERROR, INFERENCE_PROGRESS,
 };
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::job::{JobDeps, JobSink, ProcessingJob};
@@ -35,13 +35,14 @@ impl JobSink for AppJobSink {
             .map_err(|e| AppError::Inference(e.to_string()))
     }
 
-    fn on_done(&self, output_path: &str) -> Result<(), AppError> {
+    fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
         self.app
             .emit(
                 INFERENCE_DONE,
                 InferenceDonePayload {
                     id: self.id.clone(),
                     output_path: output_path.to_string(),
+                    timings: timings.clone(),
                 },
             )
             .map_err(|e| AppError::Inference(e.to_string()))
@@ -211,6 +212,14 @@ pub async fn pick_output_dir(app: AppHandle) -> Result<Option<String>, AppError>
     } else {
         Ok(None)
     }
+}
+
+#[tauri::command]
+pub async fn get_runtime_info() -> Result<RuntimeInfo, AppError> {
+    Ok(RuntimeInfo {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        ort_version: format!("1.{}", ort::MINOR_VERSION),
+    })
 }
 
 #[tauri::command]

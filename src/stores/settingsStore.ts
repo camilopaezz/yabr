@@ -1,6 +1,11 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
-import type { BenchmarkResult, GpuInfo } from "../lib/tauri";
+import type {
+  BenchmarkResult,
+  GpuInfo,
+  JobTimings,
+  RuntimeInfo,
+} from "../lib/tauri";
 import type { ModelMode } from "../lib/models";
 
 export type Theme = "system" | "light" | "dark";
@@ -12,6 +17,8 @@ export type SettingsState = {
   theme: Theme;
   gpuInfo: GpuInfo | null;
   benchmarkResult: BenchmarkResult | null;
+  runtimeInfo: RuntimeInfo | null;
+  lastJobTimings: JobTimings | null;
 };
 
 export type SettingsActions = {
@@ -21,6 +28,8 @@ export type SettingsActions = {
   setTheme: (theme: Theme) => void;
   setGpuInfo: (gpuInfo: GpuInfo | null) => void;
   setBenchmarkResult: (benchmarkResult: BenchmarkResult | null) => void;
+  setRuntimeInfo: (runtimeInfo: RuntimeInfo | null) => void;
+  setLastJobTimings: (lastJobTimings: JobTimings | null) => void;
 };
 
 export const settingsStore = createStore<SettingsState & SettingsActions>((set) => ({
@@ -30,12 +39,16 @@ export const settingsStore = createStore<SettingsState & SettingsActions>((set) 
   theme: "system",
   gpuInfo: null,
   benchmarkResult: null,
+  runtimeInfo: null,
+  lastJobTimings: null,
   setMode: (mode) => set({ mode }),
   setOutputDir: (outputDir) => set({ outputDir }),
   setEp: (ep) => set({ ep }),
   setTheme: (theme) => set({ theme }),
   setGpuInfo: (gpuInfo) => set({ gpuInfo }),
   setBenchmarkResult: (benchmarkResult) => set({ benchmarkResult }),
+  setRuntimeInfo: (runtimeInfo) => set({ runtimeInfo }),
+  setLastJobTimings: (lastJobTimings) => set({ lastJobTimings }),
 }));
 
 export function useSettingsStore(): SettingsState & SettingsActions;

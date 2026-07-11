@@ -35,6 +35,11 @@ export function invoke<T>(
     }
     case "cancel_inference":
       return Promise.resolve(undefined as T);
+    case "get_runtime_info":
+      return Promise.resolve({
+        app_version: "0.1.0",
+        ort_version: "1.24",
+      } as T);
     default:
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
   }
@@ -59,7 +64,20 @@ function simulateInference(args: { id: string; outputPath: string }): Promise<vo
 
     setTimeout(() => {
       emit("inference:progress", { id, stage: "encoding", pct: 100 });
-      emit("inference:done", { id, output_path: outputPath });
+      emit("inference:done", {
+        id,
+        output_path: outputPath,
+        timings: {
+          stages: [
+            { stage: "decoding", seconds: 0.01 },
+            { stage: "preprocessing", seconds: 0.02 },
+            { stage: "inferring", seconds: 0.15 },
+            { stage: "postprocessing", seconds: 0.03 },
+            { stage: "encoding", seconds: 0.02 },
+          ],
+          total_seconds: 0.23,
+        },
+      });
       resolve();
     }, 250);
   });

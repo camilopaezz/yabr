@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { imageStore } from "../stores/imageStore";
+import { settingsStore } from "../stores/settingsStore";
 import {
   acceptDrop,
   applyDone,
@@ -61,6 +62,7 @@ describe("currentImage", () => {
   beforeEach(() => {
     resetProcessGateForTests();
     imageStore.setState({ current: null });
+    settingsStore.getState().setLastJobTimings(null);
     Object.keys(handlers).forEach((key) => delete handlers[key]);
   });
 
@@ -335,12 +337,24 @@ describe("currentImage", () => {
         progress: 80,
         stage: "encoding",
       });
-      applyDone({ id: "img-2", output_path: "/tmp/out.png" });
+      applyDone({
+        id: "img-2",
+        output_path: "/tmp/out.png",
+        timings: {
+          stages: [
+            { stage: "decoding", seconds: 0.01 },
+            { stage: "inferring", seconds: 0.5 },
+          ],
+          total_seconds: 0.6,
+        },
+      });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("done");
       expect(current?.outputPath).toBe("/tmp/out.png");
       expect(current?.progress).toBe(100);
       expect(current?.stage).toBeNull();
+      // applyDone only updates image state; timings are set by the event listener.
+      expect(settingsStore.getState().lastJobTimings).toBeNull();
     });
 
     it("ignores done for different id", () => {
@@ -348,7 +362,11 @@ describe("currentImage", () => {
         ...makeReadyItem({ id: "img-2" }),
         status: "processing",
       });
-      applyDone({ id: "other", output_path: "/tmp/out.png" });
+      applyDone({
+        id: "other",
+        output_path: "/tmp/out.png",
+        timings: { stages: [], total_seconds: 0 },
+      });
       expect(imageStore.getState().current?.status).toBe("processing");
     });
 
@@ -423,13 +441,24 @@ describe("currentImage", () => {
       });
       await initCurrentImageListeners();
       handlers["inference:done"]({
-        payload: { id: "img-2", output_path: "/tmp/out.png" },
+        payload: {
+          id: "img-2",
+          output_path: "/tmp/out.png",
+          timings: {
+            stages: [{ stage: "inferring", seconds: 0.4 }],
+            total_seconds: 0.5,
+          },
+        },
       });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("done");
       expect(current?.outputPath).toBe("/tmp/out.png");
       expect(current?.progress).toBe(100);
       expect(current?.stage).toBeNull();
+      expect(settingsStore.getState().lastJobTimings).toEqual({
+        stages: [{ stage: "inferring", seconds: 0.4 }],
+        total_seconds: 0.5,
+      });
     });
 
     it("sets error status and message on inference:error", async () => {

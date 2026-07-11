@@ -26,6 +26,7 @@ pub fn run() {
             commands::remove_image_background,
             commands::cancel_inference,
             commands::pick_output_dir,
+            commands::get_runtime_info,
             commands::get_config,
             commands::set_config,
         ])

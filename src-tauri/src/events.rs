@@ -13,9 +13,28 @@ pub struct InferenceProgressPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageTiming {
+    pub stage: String,
+    pub seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobTimings {
+    pub stages: Vec<StageTiming>,
+    pub total_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InferenceDonePayload {
     pub id: String,
     pub output_path: String,
+    pub timings: JobTimings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeInfo {
+    pub app_version: String,
+    pub ort_version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

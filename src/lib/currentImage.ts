@@ -187,7 +187,7 @@ export function applyProgress(payload: { id: string; stage: string; pct: number 
   });
 }
 
-export function applyDone(payload: { id: string; output_path: string }): void {
+export function applyDone(payload: InferenceDonePayload): void {
   const current = imageStore.getState().current;
   if (!current || current.id !== payload.id) return;
   imageStore.getState().patch({
@@ -218,6 +218,8 @@ export async function initCurrentImageListeners(): Promise<() => void> {
 
   const unsubscribeDone = await listenInferenceDone((payload: InferenceDonePayload) => {
     applyDone(payload);
+    // Always record last successful job timings for Settings debug meta.
+    settingsStore.getState().setLastJobTimings(payload.timings);
   });
 
   const unsubscribeError = await listenInferenceError((payload: InferenceErrorPayload) => {

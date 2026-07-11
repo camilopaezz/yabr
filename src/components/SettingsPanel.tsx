@@ -3,6 +3,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   invokeDetectGpu,
   invokeGetConfig,
+  invokeGetRuntimeInfo,
   invokePickOutputDir,
   invokeRunBenchmark,
   invokeSetEp,
@@ -20,16 +21,25 @@ function formatVram(bytes: number): string {
   return `${mib.toFixed(0)} MiB`;
 }
 
+function formatSeconds(seconds: number): string {
+  if (seconds < 0.001) return "<1ms";
+  if (seconds < 1) return `${(seconds * 1000).toFixed(0)}ms`;
+  return `${seconds.toFixed(3)}s`;
+}
+
 export function SettingsPanel({ visible }: SettingsPanelProps) {
   const {
     ep,
     outputDir,
     gpuInfo,
     benchmarkResult,
+    runtimeInfo,
+    lastJobTimings,
     setEp: setEpInStore,
     setOutputDir,
     setGpuInfo,
     setBenchmarkResult,
+    setRuntimeInfo,
   } = useSettingsStore();
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +48,10 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
     invokeDetectGpu()
       .then((info) => setGpuInfo(info))
       .catch(() => {});
-  }, [visible, setGpuInfo]);
+    invokeGetRuntimeInfo()
+      .then((info) => setRuntimeInfo(info))
+      .catch(() => {});
+  }, [visible, setGpuInfo, setRuntimeInfo]);
 
   const handleEpChange = async (value: string) => {
     try {
@@ -132,6 +145,18 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
               ? formatVram(gpuInfo.vram_bytes)
               : "Unknown"}
           </div>
+          <div>
+            EPs:{" "}
+            {gpuInfo.available_eps.map((epOption) => epLabel(epOption)).join(", ")}
+          </div>
+        </div>
+      )}
+
+      {runtimeInfo && (
+        <div className="settings-meta">
+          <div>
+            App: {runtimeInfo.app_version} · ORT: {runtimeInfo.ort_version}
+          </div>
         </div>
       )}
 
@@ -143,6 +168,18 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
               {epLabel(latency.ep)}: {latency.seconds.toFixed(3)}s
             </div>
           ))}
+        </div>
+      )}
+
+      {lastJobTimings && lastJobTimings.stages.length > 0 && (
+        <div className="settings-meta">
+          <div>Last job</div>
+          {lastJobTimings.stages.map((timing) => (
+            <div key={timing.stage}>
+              {timing.stage}: {formatSeconds(timing.seconds)}
+            </div>
+          ))}
+          <div>total: {formatSeconds(lastJobTimings.total_seconds)}</div>
         </div>
       )}
     </div>

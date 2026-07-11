@@ -17,9 +17,25 @@ export type InferenceProgressPayload = {
   pct: number;
 };
 
+export type StageTiming = {
+  stage: string;
+  seconds: number;
+};
+
+export type JobTimings = {
+  stages: StageTiming[];
+  total_seconds: number;
+};
+
 export type InferenceDonePayload = {
   id: string;
   output_path: string;
+  timings: JobTimings;
+};
+
+export type RuntimeInfo = {
+  app_version: string;
+  ort_version: string;
 };
 
 export type InferenceErrorPayload = {
@@ -90,6 +106,10 @@ export function invokeSetEp(ep: string): Promise<void> {
 
 export function invokeGetConfig(): Promise<Config> {
   return tauriInvoke("get_config");
+}
+
+export function invokeGetRuntimeInfo(): Promise<RuntimeInfo> {
+  return tauriInvoke("get_runtime_info");
 }
 
 export function invokeSetConfig(config: Config): Promise<void> {
