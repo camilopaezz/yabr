@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
     vendor: "NVIDIA",
     vram_bytes: 4_000_000_000,
     available_eps: ["cuda", "cpu"],
+    optimization: "Level1 (<4 GiB)",
   },
   benchmarkResult: {
     ep_latencies: [

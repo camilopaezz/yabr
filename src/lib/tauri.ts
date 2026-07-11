@@ -52,6 +52,7 @@ export type GpuInfo = {
   vendor: string;
   vram_bytes: number | null;
   available_eps: string[];
+  optimization: string;
 };
 
 export type EpLatency = {
@@ -74,6 +75,8 @@ export type Config = {
 export type ModelDownloadPayload = {
   model_id: string;
   pct: number;
+  /** `"download"` while streaming; `"verify"` while hashing. */
+  stage: "download" | "verify" | string;
 };
 
 export function invokeListModels(): Promise<ModelMeta[]> {

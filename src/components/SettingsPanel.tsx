@@ -32,13 +32,11 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
     ep,
     outputDir,
     gpuInfo,
-    benchmarkResult,
     runtimeInfo,
     lastJobTimings,
     setEp: setEpInStore,
     setOutputDir,
     setGpuInfo,
-    setBenchmarkResult,
     setRuntimeInfo,
   } = useSettingsStore();
   const [loading, setLoading] = useState(false);
@@ -76,8 +74,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
   const handleBenchmark = async () => {
     setLoading(true);
     try {
-      const result = await invokeRunBenchmark();
-      setBenchmarkResult(result);
+      await invokeRunBenchmark();
       const config = await invokeGetConfig();
       setEpInStore(config.execution_provider);
     } catch (err) {
@@ -136,38 +133,29 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
         </button>
       </div>
 
-      {gpuInfo && (
+      {(gpuInfo || runtimeInfo) && (
         <div className="settings-meta">
-          <div>GPU: {gpuInfo.vendor}</div>
-          <div>
-            VRAM:{" "}
-            {gpuInfo.vram_bytes != null
-              ? formatVram(gpuInfo.vram_bytes)
-              : "Unknown"}
-          </div>
-          <div>
-            EPs:{" "}
-            {gpuInfo.available_eps.map((epOption) => epLabel(epOption)).join(", ")}
-          </div>
-        </div>
-      )}
-
-      {runtimeInfo && (
-        <div className="settings-meta">
-          <div>
-            App: {runtimeInfo.app_version} · ORT: {runtimeInfo.ort_version}
-          </div>
-        </div>
-      )}
-
-      {benchmarkResult && (
-        <div className="settings-meta">
-          <div>Winner: {epLabel(benchmarkResult.winner_ep)}</div>
-          {benchmarkResult.ep_latencies.map((latency) => (
-            <div key={latency.ep}>
-              {epLabel(latency.ep)}: {latency.seconds.toFixed(3)}s
+          {gpuInfo && (
+            <>
+              <div>GPU: {gpuInfo.vendor}</div>
+              <div>
+                VRAM:{" "}
+                {gpuInfo.vram_bytes != null
+                  ? formatVram(gpuInfo.vram_bytes)
+                  : "Unknown"}
+              </div>
+              <div>
+                EPs:{" "}
+                {gpuInfo.available_eps.map((epOption) => epLabel(epOption)).join(", ")}
+              </div>
+              <div>Opt: {gpuInfo.optimization}</div>
+            </>
+          )}
+          {runtimeInfo && (
+            <div>
+              App: {runtimeInfo.app_version} · ORT: {runtimeInfo.ort_version}
             </div>
-          ))}
+          )}
         </div>
       )}
 

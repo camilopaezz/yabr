@@ -9,11 +9,41 @@ const NVIDIA_VENDOR_ID: u32 = 0x10DE;
 const AMD_VENDOR_ID: u32 = 0x1002;
 const INTEL_VENDOR_ID: u32 = 0x8086;
 
+/// VRAM threshold used for ONNX graph optimization level (Level3 if ≥ this).
+pub const VRAM_LEVEL3_THRESHOLD: u64 = 4 * 1024 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuInfo {
     pub vendor: String,
     pub vram_bytes: Option<u64>,
     pub available_eps: Vec<String>,
+    /// Display label, e.g. "Level1 (<4 GiB)" — matches session graph opt level.
+    pub optimization: String,
+}
+
+/// Graph optimization level from VRAM: 3 if ≥4 GiB, else 1 (including unknown).
+pub fn opt_level_for_vram(vram: Option<u64>) -> u8 {
+    match vram {
+        Some(bytes) if bytes >= VRAM_LEVEL3_THRESHOLD => 3,
+        _ => 1,
+    }
+}
+
+pub fn optimization_label(vram: Option<u64>) -> String {
+    match vram {
+        Some(bytes) if bytes >= VRAM_LEVEL3_THRESHOLD => "Level3 (≥4 GiB)".into(),
+        Some(_) => "Level1 (<4 GiB)".into(),
+        None => "Level1 (VRAM unknown)".into(),
+    }
+}
+
+fn gpu_info(vendor: String, vram_bytes: Option<u64>, available_eps: Vec<String>) -> GpuInfo {
+    GpuInfo {
+        vendor,
+        vram_bytes,
+        available_eps,
+        optimization: optimization_label(vram_bytes),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,11 +69,7 @@ pub fn detect_gpu() -> Result<GpuInfo, AppError> {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        Ok(GpuInfo {
-            vendor: "unknown".into(),
-            vram_bytes: None,
-            available_eps: vec![ep_cpu()],
-        })
+        Ok(gpu_info("unknown".into(), None, vec![ep_cpu()]))
     }
 }
 
@@ -54,11 +80,7 @@ fn detect_gpu_linux() -> Result<GpuInfo, AppError> {
 
     let mut info = run_lspci()
         .map(|output| parse_lspci(&output))
-        .unwrap_or_else(|_| GpuInfo {
-            vendor: "unknown".into(),
-            vram_bytes: None,
-            available_eps: vec![ep_cpu()],
-        });
+        .unwrap_or_else(|_| gpu_info("unknown".into(), None, vec![ep_cpu()]));
 
     if (nvidia_present || info.vendor == "NVIDIA") && !info.available_eps.contains(&ep_cuda()) {
         info.available_eps.insert(0, ep_cuda());
@@ -67,6 +89,7 @@ fn detect_gpu_linux() -> Result<GpuInfo, AppError> {
     if nvidia_present || info.vendor == "NVIDIA" {
         if let Some(vram) = query_nvidia_vram() {
             info.vram_bytes = Some(vram);
+            info.optimization = optimization_label(info.vram_bytes);
         }
     }
 
@@ -133,11 +156,11 @@ fn parse_lspci(output: &str) -> GpuInfo {
         vec![ep_cpu()]
     };
 
-    GpuInfo {
-        vendor: vendor.unwrap_or_else(|| "unknown".to_string()),
-        vram_bytes: None,
+    gpu_info(
+        vendor.unwrap_or_else(|| "unknown".to_string()),
+        None,
         available_eps,
-    }
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -189,11 +212,7 @@ fn detect_gpu_windows() -> Result<GpuInfo, AppError> {
     let vendor = primary_vendor.map(vid_to_vendor).unwrap_or_else(|| "unknown".into());
     let available_eps = vec![ep_directml(), ep_cpu()];
 
-    Ok(GpuInfo {
-        vendor,
-        vram_bytes: None,
-        available_eps,
-    })
+    Ok(gpu_info(vendor, None, available_eps))
 }
 
 pub fn run_benchmark(app: &AppHandle) -> Result<BenchmarkResult, AppError> {

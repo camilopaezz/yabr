@@ -14,6 +14,9 @@ export function ModeSelector() {
   const [models, setModels] = useState<ModelMeta[]>([]);
   const [downloading, setDownloading] = useState<ModelMeta | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadStage, setDownloadStage] = useState<"download" | "verify">(
+    "download",
+  );
   const isCancelledRef = useRef(false);
 
   useEffect(() => {
@@ -31,6 +34,11 @@ export function ModeSelector() {
     listenModelDownload((payload) => {
       if (payload.model_id === downloading.id) {
         setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
+        if (payload.stage === "verify") {
+          setDownloadStage("verify");
+        } else {
+          setDownloadStage("download");
+        }
       }
     }).then((unsub) => {
       if (!cleanedUp) {
@@ -55,6 +63,7 @@ export function ModeSelector() {
       .finally(() => {
         setDownloading(null);
         setDownloadProgress(0);
+        setDownloadStage("download");
         isCancelledRef.current = false;
       });
 
@@ -71,6 +80,7 @@ export function ModeSelector() {
     }
     isCancelledRef.current = false;
     setDownloadProgress(0);
+    setDownloadStage("download");
     setDownloading(model);
   };
 
@@ -78,6 +88,7 @@ export function ModeSelector() {
     isCancelledRef.current = true;
     setDownloading(null);
     setDownloadProgress(0);
+    setDownloadStage("download");
   };
 
   return (
@@ -109,7 +120,11 @@ export function ModeSelector() {
       {downloading && (
         <div className="download-modal-backdrop">
           <div className="download-modal-card">
-            <h3>Downloading {downloading.name}</h3>
+            <h3>
+              {downloadStage === "verify"
+                ? `Verifying ${downloading.name}`
+                : `Downloading ${downloading.name}`}
+            </h3>
             <div className="progress-bar-track">
               <div
                 className="progress-bar-fill"
@@ -117,7 +132,9 @@ export function ModeSelector() {
               />
             </div>
             <div className="download-modal-pct">
-              {Math.round(downloadProgress)}%
+              {downloadStage === "verify"
+                ? "Verifying…"
+                : `${Math.round(downloadProgress)}%`}
             </div>
             <button type="button" onClick={handleCancel}>
               Cancel

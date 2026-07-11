@@ -47,4 +47,6 @@ pub struct InferenceErrorPayload {
 pub struct ModelDownloadPayload {
     pub model_id: String,
     pub pct: f32,
+    /// `"download"` while streaming bytes; `"verify"` while hashing.
+    pub stage: String,
 }

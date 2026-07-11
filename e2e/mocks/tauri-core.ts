@@ -90,9 +90,21 @@ function simulateDownload(modelId: string): Promise<void> {
       (state.listeners[event] ?? []).forEach((handler) => handler({ payload }));
     };
 
-    setTimeout(() => emit("model:download", { model_id: modelId, pct: 50 }), 50);
+    setTimeout(
+      () =>
+        emit("model:download", {
+          model_id: modelId,
+          pct: 50,
+          stage: "download",
+        }),
+      50,
+    );
     setTimeout(() => {
-      emit("model:download", { model_id: modelId, pct: 100 });
+      emit("model:download", {
+        model_id: modelId,
+        pct: 100,
+        stage: "verify",
+      });
       resolve();
     }, 100);
   });

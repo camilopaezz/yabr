@@ -17,15 +17,13 @@ pub static U2NETP_MODEL_BYTES: &[u8] = include_bytes!("../models/u2netp.onnx");
 
 static SESSION_CACHE: Mutex<Option<HashMap<(String, String), Session>>> = Mutex::new(None);
 
-const VRAM_LEVEL3_THRESHOLD: u64 = 4 * 1024 * 1024 * 1024;
-
 static DETECTED_VRAM: LazyLock<Option<u64>> = LazyLock::new(|| {
     crate::gpu::detect_gpu().ok().and_then(|g| g.vram_bytes)
 });
 
 fn optimization_level_for_vram(vram: Option<u64>) -> GraphOptimizationLevel {
-    match vram {
-        Some(bytes) if bytes >= VRAM_LEVEL3_THRESHOLD => GraphOptimizationLevel::Level3,
+    match crate::gpu::opt_level_for_vram(vram) {
+        3 => GraphOptimizationLevel::Level3,
         _ => GraphOptimizationLevel::Level1,
     }
 }

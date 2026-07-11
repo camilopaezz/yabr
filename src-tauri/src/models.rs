@@ -193,6 +193,7 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
             ModelDownloadPayload {
                 model_id: model_id.to_string(),
                 pct: 100.0,
+                stage: "download".into(),
             },
         )
         .map_err(|e| AppError::Model(e.to_string()))?;
@@ -200,12 +201,13 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
     }
     std::fs::create_dir_all(&cache_dir)?;
 
-    download_to_file(model, &file_path, |pct| {
+    download_to_file(model, &file_path, |stage, pct| {
         let _ = app.emit(
             MODEL_DOWNLOAD,
             ModelDownloadPayload {
                 model_id: model_id.to_string(),
                 pct,
+                stage: stage.into(),
             },
         );
     })
@@ -218,7 +220,7 @@ async fn download_to_file<F>(
     mut on_progress: F,
 ) -> Result<(), AppError>
 where
-    F: FnMut(f32) + Send,
+    F: FnMut(&str, f32) + Send,
 {
     let client = reqwest::Client::builder()
         .use_rustls_tls()
@@ -234,12 +236,13 @@ where
                         "Skipping SHA-256 verification for {}: placeholder checksum",
                         model.id
                     );
-                    on_progress(100.0);
+                    on_progress("download", 100.0);
                     return Ok(());
                 }
+                on_progress("verify", 100.0);
                 let computed = sha256_file(file_path)?;
                 if computed.eq_ignore_ascii_case(&model.sha256) {
-                    on_progress(100.0);
+                    on_progress("verify", 100.0);
                     return Ok(());
                 }
                 std::fs::remove_file(file_path)?;
@@ -267,7 +270,7 @@ async fn try_download<F>(
     on_progress: &mut F,
 ) -> Result<(), AppError>
 where
-    F: FnMut(f32) + Send,
+    F: FnMut(&str, f32) + Send,
 {
     let response = client
         .get(&model.download_url)
@@ -300,7 +303,7 @@ where
         } else {
             0.0
         };
-        on_progress(pct);
+        on_progress("download", pct);
     }
 
     file.flush()
@@ -475,12 +478,18 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
         let mut progress_values = vec![];
-        download_to_file(&model, &path, |pct| progress_values.push(pct))
-            .await
-            .unwrap();
+        let mut stages = vec![];
+        download_to_file(&model, &path, |stage, pct| {
+            stages.push(stage.to_string());
+            progress_values.push(pct);
+        })
+        .await
+        .unwrap();
         assert!(path.exists());
         assert_eq!(sha256_file(&path).unwrap(), expected_hash);
         assert!(progress_values.iter().any(|&p| p > 0.0));
+        assert!(stages.iter().any(|s| s == "download"));
+        assert!(stages.iter().any(|s| s == "verify"));
         handle.abort();
     }
 
@@ -504,7 +513,7 @@ mod tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
-        download_to_file(&model, &path, |_| {})
+        download_to_file(&model, &path, |_, _| {})
             .await
             .unwrap();
         assert!(path.exists());
@@ -531,7 +540,7 @@ mod tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
-        let err = download_to_file(&model, &path, |_| {})
+        let err = download_to_file(&model, &path, |_, _| {})
             .await
             .expect_err("download should fail on SHA mismatch");
         assert!(

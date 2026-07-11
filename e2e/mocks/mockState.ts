@@ -11,6 +11,7 @@ export type MockConfig = {
     vendor: string;
     vram_bytes: number | null;
     available_eps: string[];
+    optimization: string;
   };
   benchmarkResult: {
     ep_latencies: { ep: string; seconds: number }[];
@@ -46,6 +47,7 @@ function createDefaultConfig(): MockConfig {
       vendor: "NVIDIA",
       vram_bytes: 4_000_000_000,
       available_eps: ["cuda", "cpu"],
+      optimization: "Level1 (<4 GiB)",
     },
     benchmarkResult: {
       ep_latencies: [

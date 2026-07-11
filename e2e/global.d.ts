@@ -11,6 +11,7 @@ interface Window {
         vendor: string;
         vram_bytes: number | null;
         available_eps: string[];
+        optimization: string;
       };
       benchmarkResult: {
         ep_latencies: { ep: string; seconds: number }[];
