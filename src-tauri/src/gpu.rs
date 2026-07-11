@@ -64,7 +64,27 @@ fn detect_gpu_linux() -> Result<GpuInfo, AppError> {
         info.available_eps.insert(0, ep_cuda());
     }
 
+    if nvidia_present || info.vendor == "NVIDIA" {
+        if let Some(vram) = query_nvidia_vram() {
+            info.vram_bytes = Some(vram);
+        }
+    }
+
     Ok(info)
+}
+
+#[cfg(target_os = "linux")]
+fn query_nvidia_vram() -> Option<u64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mib: u64 = text.trim().lines().next()?.trim().parse().ok()?;
+    Some(mib * 1024 * 1024)
 }
 
 #[cfg(target_os = "linux")]
@@ -151,7 +171,7 @@ fn ep_directml() -> String {
 fn detect_gpu_windows() -> Result<GpuInfo, AppError> {
     use wgpu::Backends;
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: Backends::DX12,
         ..Default::default()
     });

@@ -1,4 +1,4 @@
-use image::{imageops::FilterType, DynamicImage, GrayImage, RgbaImage};
+use image::{imageops::FilterType, DynamicImage, GrayImage};
 use ndarray::{Array4, Axis};
 
 use crate::error::AppError;
@@ -86,23 +86,6 @@ fn extract_logits(output: &ndarray::ArrayD<f32>) -> Result<(usize, usize, Vec<f3
         .copied()
         .collect();
     Ok((h, w, logits))
-}
-
-pub fn apply_alpha(rgb: &image::RgbImage, alpha: &GrayImage) -> Result<RgbaImage, AppError> {
-    if rgb.dimensions() != alpha.dimensions() {
-        return Err(AppError::Pipeline(format!(
-            "rgb/alpha size mismatch: {:?} vs {:?}",
-            rgb.dimensions(),
-            alpha.dimensions()
-        )));
-    }
-    let (w, h) = rgb.dimensions();
-    let mut rgba = RgbaImage::new(w, h);
-    for (x, y, pix) in rgb.enumerate_pixels() {
-        let a = alpha.get_pixel(x, y)[0];
-        rgba.put_pixel(x, y, image::Rgba([pix[0], pix[1], pix[2], a]));
-    }
-    Ok(rgba)
 }
 
 #[cfg(test)]

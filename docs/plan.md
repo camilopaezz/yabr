@@ -18,7 +18,7 @@ Each row is a decision resolved during grilling. Rationale is one line.
 | A2 | Inference embedding | **In-process `ort` crate** | No IPC serialization overhead, single process, direct EP control. |
 | A3 | GPU EP strategy | **DirectML (Win) + CUDA (Linux NVIDIA) + CPU fallback (Linux AMD) + CoreML (macOS, later)** | One Windows binary covers NVIDIA+AMD; Linux AMD falls back to CPU (ROCm packaging cost too high for MVP). |
 | A4 | Model registry | **`u2netp`, `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`** | Covers Turbo / Balanced / Balanced+ / Max Quality. All have ONNX exports. BRIA allowed (non-commercial OSS). |
-| A5 | Feature scope (MVP) | **Drag-drop + batch + preview + export PNG transparent** | Focused MVP; no post-processing, no video, no manual editor. |
+| A5 | Feature scope (MVP) | **Drag-drop + preview + export PNG transparent (single image at a time)** | Focused MVP; no batch queue, no post-processing, no video, no manual editor. |
 | A6 | Frontend stack | **React + TypeScript + Vite** | Mature ecosystem, drag-drop/canvas libs, official Tauri template. |
 | A7 | Release targets (v1) | **Windows x64 + Linux x64 (AppImage)** | Author's hardware (Ryzen 5 4600G). macOS deferred (no device to test). |
 | A8 | Model delivery | **On-demand lazy download from HuggingFace + cache in appData** | Small installer (~30 MB); user only downloads modes they use. |
@@ -99,13 +99,13 @@ blablablu/
 │   ├── App.tsx
 │   ├── components/
 │   │   ├── FileDropZone.tsx     # uses useTauriFileDrop() hook
-│   │   ├── BatchList.tsx
+│   │   ├── ImagePanel.tsx
 │   │   ├── PreviewCanvas.tsx
 │   │   ├── ModeSelector.tsx
 │   │   ├── ProgressBar.tsx
 │   │   └── SettingsPanel.tsx
 │   ├── stores/
-│   │   ├── batchStore.ts       # Zustand: image queue + status per item
+│   │   ├── imageStore.ts       # Zustand: current image + status
 │   │   ├── settingsStore.ts    # Zustand: mode, EP, output dir
 │   │   └── progressStore.ts    # Zustand: live progress events
 │   ├── lib/
@@ -231,10 +231,10 @@ bytes ──image_io::decode──▶ DynamicImage
    bytes (PNG) ──▶ written to output dir
 ```
 
-**Batch** = a queue of `{id, input_path, output_path}` processed sequentially on a
-dedicated worker thread. Per-item progress is emitted as `inference:progress` events.
-A `cancel_token` (AtomicBool) lets the user abort the current item; remaining items
-can be cancelled via `cancel_batch`.
+**Single image** = one `{id, input_path, output_path}` processed inline via
+`spawn_blocking` on `remove_image_background`. Progress is emitted as
+`inference:progress` events. A `cancel` `AtomicBool` (`ProcessingState`) lets the
+user abort the in-flight run via `cancel_inference`.
 
 ---
 
@@ -250,7 +250,7 @@ can be cancelled via `cancel_batch`.
 | `list_models` | — | `Vec<ModelMeta>` | registry with download state |
 | `download_model` | `model_id` | `()` | streams `model:download` events |
 | `remove_image_background` | `{ id, input_path, output_path, model_id }` | `()` | emits `inference:progress` |
-| `cancel_batch` | — | `()` | sets cancel token |
+| `cancel_inference` | — | `()` | sets the in-flight cancel token |
 | `pick_output_dir` | — | `Option<String>` | wraps dialog plugin |
 | `get_config` / `set_config` | — | `Config` | persist settings |
 
@@ -268,12 +268,12 @@ can be cancelled via `cancel_batch`.
 ## 9. Frontend (React) Shape
 
 **Stores (Zustand):**
-- `batchStore`: `items: BatchItem[]` where `BatchItem = { id, inputPath, outputPath, status: 'queued'|'processing'|'done'|'error'|'cancelled', progress: number }`.
+- `imageStore`: `current: ImageItem | null` where `ImageItem = { id, inputPath, outputPath, status: 'queued'|'processing'|'done'|'error'|'cancelled', progress: number }`. Dropping a new image replaces `current`.
 - `settingsStore`: `mode`, `outputDir`, `ep`, `theme`.
-- `progressStore`: subscribes to Tauri events and patches `batchStore` by id.
+- `progressStore`: subscribes to Tauri events and patches `imageStore` when the payload `id` matches the current image.
 
-**Key components:** `FileDropZone` (uses `useTauriFileDrop()` → invokes `remove_image_background`
-per dropped file), `BatchList` (renders queue with per-item progress), `PreviewCanvas`
+**Key components:** `FileDropZone` (uses `useTauriFileDrop()` → sets the current image on drop), `ImagePanel`
+(renders the current image with status/progress + Process/Cancel/Remove), `PreviewCanvas`
 (toggles original/transparent on click), `ModeSelector` (Turbo/Balanced/Balanced+/Max),
 `SettingsPanel` (EP override, output dir, re-run benchmark).
 
@@ -288,7 +288,7 @@ per dropped file), `BatchList` (renders queue with per-item progress), `PreviewC
 - **Inference smoke test** (`tests/smoke_inference.rs`): load `u2netp`, run on
   `tests/fixtures/sample.png`, assert output PNG has an alpha channel and that the
   mask IoU vs `tests/fixtures/sample_mask.png` ≥ 0.85.
-- **Frontend**: Vitest on `batchStore` reducers and `progressStore` event handlers
+- **Frontend**: Vitest on `imageStore` reducers and `progressStore` event handlers
   (mock `listen`).
 - **E2E**: Playwright over the Tauri WebDriver target — drop a fixture image, wait for
   `inference:done`, assert output file exists in a temp dir. Nightly in CI.
@@ -354,23 +354,18 @@ per dropped file), `BatchList` (renders queue with per-item progress), `PreviewC
 - On-demand download modal.
 - Deliverable: all 4 models selectable, downloaded on first use.
 
-**Phase 7 — Batch queue**
-- Worker thread, sequential processing, per-item progress.
-- `cancel_batch` via `AtomicBool` cancel token.
-- Deliverable: multi-image batch processing with cancel.
-
-**Phase 8 — Output polish**
+**Phase 7 — Output polish**
 - Output dir picker, overwrite prompts.
 - Preview canvas before/after toggle.
 - Deliverable: MVP UX complete.
 
-**Phase 9 — E2E**
+**Phase 8 — E2E**
 - Playwright/WebDriver suite over the Tauri desktop target.
 - Drop a fixture image, wait for `inference:done`, assert output file exists.
 - Gated to CI nightly.
 - Deliverable: MVP complete, shippable.
 
-**Phase 10 (post-MVP) — Distribution**
+**Phase 9 (post-MVP) — Distribution**
 - Tauri updater wired to GitHub Releases.
 - NSIS + AppImage artifacts in CI.
 - README, screenshots, license notes (incl. BRIA CC-BY-NC non-commercial statement).
@@ -378,6 +373,7 @@ per dropped file), `BatchList` (renders queue with per-item progress), `PreviewC
 **Future / out of scope for v1:**
 - macOS target (CoreML).
 - ROCm Linux AMD build.
+- Batch queue (multi-image sequential processing with cancel) — deferred; v1 processes one image at a time.
 - Mask threshold / shrink / expand controls (light Gaussian edge feathering is applied by default).
 - Solid color / gradient / image background replacement.
 - Video background removal.

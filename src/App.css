@@ -1,19 +1,27 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
+  --bg: #f4f4f5;
+  --bg-rail: #ececee;
+  --bg-preview: #e4e4e7;
+  --bg-elevated: #ffffff;
+  --fg: #18181b;
+  --fg-muted: #71717a;
+  --border: rgba(24, 24, 27, 0.12);
+  --accent: #396cd8;
+  --accent-hover: #2f5bb8;
+  --danger: #dc2626;
+  --radius: 8px;
+  --rail-width: 300px;
+  --titlebar-height: 40px;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  /* Make native <select>/<option> follow light/dark with our theme. */
+  color-scheme: light;
+
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
   font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
+  color: var(--fg);
+  background-color: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,96 +29,869 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b;
+    --bg-rail: #1f1f23;
+    --bg-preview: #141416;
+    --bg-elevated: #27272a;
+    --fg: #fafafa;
+    --fg-muted: #a1a1aa;
+    --border: rgba(250, 250, 250, 0.12);
+    --accent: #5b8def;
+    --accent-hover: #7aa2f5;
+    --danger: #f87171;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
+button,
 input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+select {
+  font: inherit;
+  color: inherit;
 }
 
 button {
   cursor: pointer;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 0.5em 0.9em;
+  background: var(--bg-elevated);
+  transition: border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
 }
 
-button:hover {
-  border-color: #396cd8;
+button:hover:not(:disabled) {
+  border-color: var(--accent);
 }
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.btn-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+button.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: transparent;
+}
+
+button.btn-ghost {
+  background: transparent;
+}
+
+button.btn-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
 }
 
 input,
-button {
+select {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 0.45em 0.7em;
+  background-color: var(--bg-elevated);
+  color: var(--fg);
   outline: none;
+  width: 100%;
 }
 
-#greet-input {
-  margin-right: 5px;
+/* Closed control + dropdown list (WebKit/GTK often ignore color without this). */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+    linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 3px),
+    calc(100% - 9px) calc(50% - 3px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2em;
+}
+
+select option,
+select optgroup {
+  background-color: var(--bg-elevated);
+  color: var(--fg);
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* ── Shell ─────────────────────────────────────────────── */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, var(--rail-width)) minmax(0, 1fr);
+  grid-template-areas:
+    "titlebar titlebar"
+    "rail preview";
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+/* Custom window chrome (decorations: false). */
+.titlebar {
+  grid-area: titlebar;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--titlebar-height);
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-rail);
+  user-select: none;
+  min-width: 0;
+  /* Allow window drag from empty titlebar space. */
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.titlebar-drag {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 100%;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  /* Buttons must not start window drag. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.ep-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15em 0.5em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+button.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2rem;
+  padding: 0;
+  flex-shrink: 0;
+  line-height: 0;
+  color: var(--fg-muted);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+  box-shadow: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.titlebar-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  pointer-events: none;
+  line-height: 0;
+}
+
+.titlebar-icon-wrap .titlebar-icon,
+.titlebar-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+button.btn-icon:hover:not(:disabled) {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border-color: transparent;
+}
+
+button.titlebar-close:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+  border-color: transparent;
+}
+
+.app-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-rail);
+  /* Never scroll the whole rail — only the middle; footer stays on screen. */
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+
+.app-rail-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px 12px 12px;
+}
+
+.app-rail-footer {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
+  /* Extra bottom pad so Process is not clipped by window chrome / round corners. */
+  padding: 12px 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-rail);
+  z-index: 1;
+}
+
+.app-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.app-rail-section-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.app-preview {
+  grid-area: preview;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-preview);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── File block ────────────────────────────────────────── */
+
+.file-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.file-block-empty {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.file-block-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.file-block-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-block-actions button {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Mode selector ─────────────────────────────────────── */
+
+.mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  opacity: 0.95;
+}
+
+/* Tiling / short windows: keep mode list denser so scroll area stays usable. */
+@media (max-height: 700px) {
+  .mode-option {
+    padding: 4px 8px;
+  }
+
+  .app-rail-scroll {
+    gap: 12px;
+    padding: 12px 12px 8px;
+  }
+
+  .app-rail-footer {
+    padding: 8px 12px 12px;
+  }
+
+  .file-block {
+    padding: 8px 10px;
+  }
+}
+
+.mode-option:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.mode-option-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.mode-option-badge {
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+
+.mode-option input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* ── Image panel / process ─────────────────────────────── */
+
+.image-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.image-panel-status {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  word-break: break-word;
+}
+
+.image-panel-status.is-error {
+  color: var(--danger);
+}
+
+.image-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.image-panel-actions button {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Disabled primary must stay readable (opacity alone can look “missing”). */
+.image-panel-actions button.btn-primary:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 45%, var(--bg-elevated));
+  color: color-mix(in srgb, #fff 75%, var(--fg-muted));
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+/* ── Progress ──────────────────────────────────────────── */
+
+.progress-bar {
+  width: 100%;
+}
+
+.progress-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: color-mix(in srgb, var(--fg-muted) 22%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+  border-radius: 4px;
+}
+
+/* ── Preview canvas ────────────────────────────────────── */
+
+.preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 0;
+}
+
+.preview-canvas.is-dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: -10px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-preview));
+}
+
+.preview-empty {
+  text-align: center;
+  color: var(--fg-muted);
+  padding: 32px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  max-width: 360px;
+  width: calc(100% - 48px);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.preview-canvas.is-dragging .preview-empty {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--fg);
+}
+
+.preview-empty-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--fg);
+}
+
+.preview-empty-formats {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.preview-stage {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.preview-image-frame {
+  position: relative;
+  /* Fit inside stage (padding already applied by .preview-stage). */
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  /* checkerboard for alpha */
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  line-height: 0;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  .preview-image-frame {
+    background-color: #2a2a2e;
+    background-image:
+      linear-gradient(45deg, #3a3a40 25%, transparent 25%),
+      linear-gradient(-45deg, #3a3a40 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #3a3a40 75%),
+      linear-gradient(-45deg, transparent 75%, #3a3a40 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   }
+}
 
-  a:hover {
-    color: #24c8db;
-  }
+/* Match compare-slider sizing so ready/processing previews aren't cropped. */
+.preview-image-frame img {
+  display: block;
+  max-width: min(100%, calc(100vw - var(--rail-width) - 48px));
+  max-height: calc(100vh - var(--titlebar-height) - 48px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+/* Comparison slider — stacked imgs + clip-path (no measure thrash / selection). */
+.compare-slider {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  touch-action: none;
+  cursor: col-resize;
+  line-height: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  outline: none;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.compare-slider:focus {
+  outline: none;
+}
+
+.compare-slider:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .compare-slider {
+    background-color: #2a2a2e;
+    background-image:
+      linear-gradient(45deg, #3a3a40 25%, transparent 25%),
+      linear-gradient(-45deg, #3a3a40 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #3a3a40 75%),
+      linear-gradient(-45deg, transparent 75%, #3a3a40 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+}
+
+/* After image sizes the box; before is overlaid 1:1 and clipped. */
+.compare-img {
+  display: block;
+  max-width: min(100%, calc(100vw - var(--rail-width) - 48px));
+  max-height: calc(100vh - var(--titlebar-height) - 48px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.compare-img-after {
+  position: relative;
+  z-index: 0;
+}
+
+.compare-img-before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+}
+
+.compare-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.compare-handle-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.compare-labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Suppress document selection while scrubbing the compare handle. */
+body.is-slider-dragging,
+body.is-slider-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: col-resize !important;
+}
+
+/* ── Settings modal ────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 24px;
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  padding: 0.25em 0.55em;
+  line-height: 1;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-field label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.settings-select {
+  background-color: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.settings-select option {
+  background-color: var(--bg-elevated);
+  color: var(--fg);
+}
+
+.settings-hint {
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.settings-meta {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Full-window overlays (first-run, download) ────────── */
+
+.fullscreen-blocker {
+  /* Leave custom titlebar free so drag/minimize/maximize/close stay usable. */
+  position: fixed;
+  top: var(--titlebar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--fg);
+  z-index: 300;
+  font-size: 1.1rem;
+}
+
+.download-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 250;
+  padding: 24px;
+}
+
+.download-modal-card {
+  width: min(320px, 100%);
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+}
+
+.download-modal-card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.download-modal-pct {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.download-modal-card button {
+  margin-top: 16px;
+  width: 100%;
 }

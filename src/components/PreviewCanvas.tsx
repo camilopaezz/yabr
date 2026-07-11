@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { readFile } from "@tauri-apps/plugin-fs";
 
 export type PreviewCanvasProps = {
   inputPath: string | null;
   outputPath: string | null;
+  /** When true, show comparison slider (typically status === "done"). */
+  canCompare?: boolean;
+  isDragging?: boolean;
 };
 
 async function loadImageUrl(path: string | null): Promise<string | null> {
@@ -13,138 +22,200 @@ async function loadImageUrl(path: string | null): Promise<string | null> {
   return URL.createObjectURL(blob);
 }
 
-function drawImageToCanvas(
-  canvas: HTMLCanvasElement,
-  url: string,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Canvas context not available"));
-        return;
-      }
-      const maxWidth = canvas.clientWidth || img.width;
-      const scale = Math.min(1, maxWidth / img.width);
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve();
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
-export function PreviewCanvas({ inputPath, outputPath }: PreviewCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [showOutput, setShowOutput] = useState(true);
-  const objectUrlsRef = useRef<string[]>([]);
+/**
+ * Load a path into a blob URL. Keeps the previous URL visible until the next
+ * one is ready, then revokes the prior URL (avoids broken-image flicker).
+ */
+function useObjectUrl(path: string | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  const displayedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
     let cancelled = false;
 
-    const render = async () => {
-      const path = showOutput ? outputPath ?? inputPath : inputPath;
-      if (!path) {
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-        return;
+    if (!path) {
+      if (displayedRef.current) {
+        URL.revokeObjectURL(displayedRef.current);
+        displayedRef.current = null;
       }
+      setUrl(null);
+      return;
+    }
 
-      try {
-        const url = await loadImageUrl(path);
-        if (!url || cancelled) {
-          if (url) URL.revokeObjectURL(url);
+    loadImageUrl(path)
+      .then((next) => {
+        if (cancelled) {
+          if (next) URL.revokeObjectURL(next);
           return;
         }
-        objectUrlsRef.current.push(url);
-        await drawImageToCanvas(canvas, url);
-      } catch {
-        // noop
-      }
-    };
-
-    render();
+        const prev = displayedRef.current;
+        displayedRef.current = next;
+        setUrl(next);
+        if (prev && prev !== next) URL.revokeObjectURL(prev);
+      })
+      .catch(() => {
+        // Keep previous image if reload fails.
+      });
 
     return () => {
       cancelled = true;
-      objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      objectUrlsRef.current = [];
     };
-  }, [inputPath, outputPath, showOutput]);
+  }, [path]);
 
-  const canToggle = inputPath && outputPath;
+  useEffect(() => {
+    return () => {
+      if (displayedRef.current) {
+        URL.revokeObjectURL(displayedRef.current);
+        displayedRef.current = null;
+      }
+    };
+  }, []);
+
+  return url;
+}
+
+type CompareSliderProps = {
+  inputUrl: string;
+  outputUrl: string;
+};
+
+function CompareSlider({ inputUrl, outputUrl }: CompareSliderProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState(50);
+  // Keep drag state in a ref so pointermove does not re-bind listeners.
+  const draggingRef = useRef(false);
+  const positionRef = useRef(50);
+
+  const setPositionBoth = useCallback((pct: number) => {
+    const next = Math.max(0, Math.min(100, pct));
+    positionRef.current = next;
+    setPosition(next);
+  }, []);
+
+  const updateFromClientX = useCallback(
+    (clientX: number) => {
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      setPositionBoth(((clientX - rect.left) / rect.width) * 100);
+    },
+    [setPositionBoth],
+  );
+
+  useEffect(() => {
+    const endDrag = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.classList.remove("is-slider-dragging");
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      e.preventDefault();
+      updateFromClientX(e.clientX);
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      document.body.classList.remove("is-slider-dragging");
+    };
+  }, [updateFromClientX]);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    // Prevent native image/text selection while scrubbing.
+    e.preventDefault();
+    e.stopPropagation();
+    draggingRef.current = true;
+    document.body.classList.add("is-slider-dragging");
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some environments reject capture; window listeners still work.
+    }
+    updateFromClientX(e.clientX);
+  };
+
+  // clip-path reveals left `position`% of the before image — no pixel measure / resize thrash.
+  const beforeClip = `inset(0 ${100 - position}% 0 0)`;
 
   return (
-    <div style={{ width: "100%" }}>
-      {canToggle && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 12,
-          }}
-        >
-          <button
-            onClick={() => setShowOutput(false)}
-            style={{
-              fontWeight: !showOutput ? 700 : 400,
-              opacity: !showOutput ? 1 : 0.7,
-              transition: "all 0.2s ease",
-            }}
-          >
-            Original
-          </button>
-          <button
-            onClick={() => setShowOutput(true)}
-            style={{
-              fontWeight: showOutput ? 700 : 400,
-              opacity: showOutput ? 1 : 0.7,
-              transition: "all 0.2s ease",
-            }}
-          >
-            No Background
-          </button>
-        </div>
-      )}
-      <canvas
-        ref={canvasRef}
-        onClick={() => canToggle && setShowOutput((prev) => !prev)}
-        style={{
-          width: "100%",
-          maxHeight: 360,
-          borderRadius: 8,
-          border: "1px solid rgba(128, 128, 128, 0.3)",
-          cursor: canToggle ? "pointer" : "default",
-          backgroundImage:
-            "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-          backgroundColor: "#fff",
-          transition: "opacity 0.2s ease, transform 0.2s ease",
-        }}
+    <div
+      ref={containerRef}
+      className="compare-slider"
+      onPointerDown={onPointerDown}
+      role="slider"
+      aria-label="Before and after comparison"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(position)}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") setPositionBoth(positionRef.current - 2);
+        if (e.key === "ArrowRight") setPositionBoth(positionRef.current + 2);
+      }}
+    >
+      <img
+        className="compare-img compare-img-after"
+        src={outputUrl}
+        alt=""
+        draggable={false}
       />
-      {canToggle && (
-        <p
-          style={{
-            margin: "8px 0 0",
-            fontSize: "0.8rem",
-            textAlign: "center",
-            opacity: 0.7,
-          }}
-        >
-          {showOutput ? "Showing result (click for original)" : "Showing original (click for result)"}
-        </p>
-      )}
+      <img
+        className="compare-img compare-img-before"
+        src={inputUrl}
+        alt=""
+        draggable={false}
+        style={{ clipPath: beforeClip }}
+      />
+      <div className="compare-handle" style={{ left: `${position}%` }} aria-hidden>
+        <span className="compare-handle-knob" />
+      </div>
+      <div className="compare-labels" aria-hidden>
+        <span>Before</span>
+        <span>After</span>
+      </div>
+    </div>
+  );
+}
+
+export function PreviewCanvas({
+  inputPath,
+  outputPath,
+  canCompare = false,
+  isDragging = false,
+}: PreviewCanvasProps) {
+  const inputUrl = useObjectUrl(inputPath);
+  const outputUrl = useObjectUrl(canCompare ? outputPath : null);
+  const showCompare = Boolean(canCompare && inputPath && outputPath && inputUrl && outputUrl);
+
+  if (!inputPath) {
+    return (
+      <div className={`preview-canvas${isDragging ? " is-dragging" : ""}`}>
+        <div className="preview-empty">
+          <p className="preview-empty-title">
+            {isDragging ? "Drop image here" : "Drop an image here"}
+          </p>
+          <p className="preview-empty-formats">PNG, JPG, WEBP, BMP</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`preview-canvas${isDragging ? " is-dragging" : ""}`}>
+      <div className="preview-stage">
+        {showCompare ? (
+          <CompareSlider inputUrl={inputUrl!} outputUrl={outputUrl!} />
+        ) : inputUrl ? (
+          <div className="preview-image-frame">
+            <img src={inputUrl} alt="Input" draggable={false} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

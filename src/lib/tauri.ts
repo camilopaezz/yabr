@@ -4,7 +4,7 @@ import type { ModelMeta, ModelMode } from "./models";
 
 export type { ModelMeta, ModelMode };
 
-export type RemoveBackgroundArgs = {
+export type ProcessingJob = {
   id: string;
   inputPath: string;
   outputPath: string;
@@ -96,7 +96,7 @@ export function invokeSetConfig(config: Config): Promise<void> {
   return tauriInvoke("set_config", { config });
 }
 
-export function invokeRemoveImageBackground(args: RemoveBackgroundArgs): Promise<void> {
+export function invokeRemoveImageBackground(args: ProcessingJob): Promise<void> {
   return tauriInvoke("remove_image_background", { args });
 }
 
@@ -104,8 +104,8 @@ export function invokePickOutputDir(): Promise<string | null> {
   return tauriInvoke("pick_output_dir");
 }
 
-export function invokeCancelBatch(): Promise<void> {
-  return tauriInvoke("cancel_batch");
+export function invokeCancelInference(): Promise<void> {
+  return tauriInvoke("cancel_inference");
 }
 
 export function listenInferenceProgress(

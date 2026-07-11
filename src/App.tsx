@@ -1,27 +1,40 @@
-import { useEffect, useState } from "react";
-import { FileDropZone } from "./components/FileDropZone";
+import { useEffect, useRef, useState } from "react";
+import { FileBlock } from "./components/FileBlock";
 import { ModeSelector } from "./components/ModeSelector";
-import { BatchList } from "./components/BatchList";
+import { ImagePanel } from "./components/ImagePanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { initEventListeners } from "./stores/progressStore";
-import { useBatchStore } from "./stores/batchStore";
-import { settingsStore } from "./stores/settingsStore";
+import { TitleBar } from "./components/TitleBar";
+import { acceptDrop, initCurrentImageListeners, syncOutputPath } from "./lib/currentImage";
+import { useTauriFileDrop } from "./lib/useTauriFileDrop";
+import { useImageStore } from "./stores/imageStore";
+import { settingsStore, useSettingsStore } from "./stores/settingsStore";
 import { invokeDetectGpu, invokeGetConfig, invokeRunBenchmark } from "./lib/tauri";
 import "./App.css";
 
 function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [firstRun, setFirstRun] = useState(false);
   const [ready, setReady] = useState(false);
-  const items = useBatchStore((state) => state.items);
+  const [firstRun, setFirstRun] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsCloseRef = useRef<HTMLButtonElement>(null);
+  const current = useImageStore((state) => state.current);
+  const ep = useSettingsStore((state) => state.ep);
+  const mode = useSettingsStore((state) => state.mode);
+  const outputDir = useSettingsStore((state) => state.outputDir);
+  const { isDragging, paths } = useTauriFileDrop();
+  const lastProcessedRef = useRef<string[] | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     let unsubscribe: (() => void) | undefined;
 
-    initEventListeners().then((unsub) => {
-      unsubscribe = unsub;
+    initCurrentImageListeners().then((unsub) => {
+      if (cancelled) {
+        unsub();
+      } else {
+        unsubscribe = unsub;
+      }
     });
 
     const initialize = async () => {
@@ -52,79 +65,122 @@ function App() {
     initialize();
 
     return () => {
+      cancelled = true;
       unsubscribe?.();
     };
   }, []);
 
-  const selectedItem = items.find((item) => item.id === selectedId) ?? items[items.length - 1];
+  // Window-level drop acceptance (highlight is preview-only via isDragging).
+  useEffect(() => {
+    if (!paths || paths.length === 0) return;
+    if (lastProcessedRef.current === paths) return;
+    lastProcessedRef.current = paths;
+    acceptDrop(paths, { mode, outputDir });
+  }, [paths, outputDir, mode]);
+
+  useEffect(() => {
+    syncOutputPath({ mode, outputDir });
+  }, [mode, outputDir]);
+
+  useEffect(() => {
+    if (!settingsVisible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSettingsVisible(false);
+    };
+    window.addEventListener("keydown", onKey);
+    // Focus close control when the modal opens; restore Settings button on close.
+    settingsCloseRef.current?.focus();
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      settingsButtonRef.current?.focus();
+    };
+  }, [settingsVisible]);
+
+  // Frameless window: always mount TitleBar so drag/close work during first-run
+  // and cold-start. Blocker overlays content only (CSS leaves titlebar free).
+  const canCompare =
+    current?.status === "done" && Boolean(current.inputPath && current.outputPath);
 
   return (
-    <main
-      style={{
-        padding: 24,
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        maxWidth: 960,
-        margin: "0 auto",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 24,
-        }}
-      >
-        <h1 style={{ margin: 0 }}>yabr</h1>
-        <button onClick={() => setSettingsVisible((prev) => !prev)}>
-          {settingsVisible ? "Hide settings" : "Settings"}
-        </button>
-      </header>
+    <div className="app-shell">
+      <TitleBar
+        ep={ep}
+        settingsButtonRef={settingsButtonRef}
+        onOpenSettings={() => setSettingsVisible(true)}
+      />
 
+      {/* U14: first-run acceleration detector only — not a generic cold-start splash. */}
       {firstRun && (
-        <div
-          style={{
-            padding: 16,
-            marginBottom: 24,
-            borderRadius: 8,
-            background: "rgba(128, 128, 128, 0.15)",
-          }}
-        >
+        <div className="fullscreen-blocker" role="status">
           Detecting best acceleration…
         </div>
       )}
 
-      {ready && !firstRun && (
+      {!ready && !firstRun && (
+        <div className="fullscreen-blocker" role="status" aria-busy="true" />
+      )}
+
+      {ready && (
         <>
-          <SettingsPanel visible={settingsVisible} />
+          <aside className="app-rail">
+            {/* Scrollable controls; footer stays pinned so Process/Cancel survive short tiles. */}
+            <div className="app-rail-scroll">
+              <div className="app-rail-section">
+                <FileBlock />
+              </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <FileDropZone />
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 24,
-              alignItems: "start",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              <ModeSelector />
-              <BatchList selectedId={selectedId} onSelect={setSelectedId} />
+              <div className="app-rail-section">
+                <ModeSelector />
+              </div>
             </div>
 
-            <div>
-              <PreviewCanvas
-                inputPath={selectedItem?.inputPath ?? null}
-                outputPath={selectedItem?.outputPath ?? null}
-              />
+            <div className="app-rail-footer">
+              <ImagePanel />
             </div>
-          </div>
+          </aside>
+
+          <section className="app-preview" aria-label="Preview">
+            <PreviewCanvas
+              inputPath={current?.inputPath ?? null}
+              outputPath={current?.outputPath ?? null}
+              canCompare={canCompare}
+              isDragging={isDragging}
+            />
+          </section>
+
+          {settingsVisible && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSettingsVisible(false);
+              }}
+            >
+              <div
+                className="modal-card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-title"
+              >
+                <div className="modal-header">
+                  <h2 id="settings-title">Settings</h2>
+                  <button
+                    ref={settingsCloseRef}
+                    type="button"
+                    className="modal-close"
+                    aria-label="Close settings"
+                    onClick={() => setSettingsVisible(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <SettingsPanel visible={settingsVisible} />
+              </div>
+            </div>
+          )}
         </>
       )}
-    </main>
+    </div>
   );
 }
 

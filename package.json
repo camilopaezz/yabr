@@ -8,6 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri",
+    "tauri:build:cachy": "WEBKIT_DISABLE_COMPOSITING_MODE=1 NO_STRIP=true tauri build",
+    "gen:models": "cargo run --manifest-path src-tauri/Cargo.toml --bin gen_model_registry",
+    "gen:models:check": "cargo run --manifest-path src-tauri/Cargo.toml --bin gen_model_registry -- --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc --project tsconfig.e2e.json"
