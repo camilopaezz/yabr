@@ -35,8 +35,8 @@ describe("resolveMode", () => {
     expect(resolveMode("isnet-general-use", models)).toBe("isnet-general-use");
   });
 
-  it("prefers Balanced+ when current is not ready and preferred is downloaded", () => {
-    const models = withDownloadState(["rmbg-1.4"]);
+  it("prefers Balanced when current is not ready and preferred is downloaded", () => {
+    const models = withDownloadState(["isnet-general-use"]);
     expect(resolveMode("rmbg-2.0", models)).toBe(PREFERRED_DEFAULT_MODE);
   });
 
@@ -57,18 +57,18 @@ describe("resolveMode", () => {
   });
 
   it("selects preferred from an unresolved default when weights are ready", () => {
-    const models = withDownloadState(["rmbg-1.4"]);
+    const models = withDownloadState(["isnet-general-use"]);
     expect(resolveMode(PREFERRED_DEFAULT_MODE, models)).toBe(
       PREFERRED_DEFAULT_MODE,
     );
   });
 
   it("uses first ready model when preferred and fallback are both unavailable", () => {
-    const models = withDownloadState(["isnet-general-use"]).map((m) =>
+    const models = withDownloadState(["rmbg-1.4"]).map((m) =>
       m.id === FALLBACK_DEFAULT_MODE || m.id === PREFERRED_DEFAULT_MODE
         ? { ...m, bundled: false, downloaded: false }
         : m,
     );
-    expect(resolveMode("rmbg-2.0", models)).toBe("isnet-general-use");
+    expect(resolveMode("rmbg-2.0", models)).toBe("rmbg-1.4");
   });
 });

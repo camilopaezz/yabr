@@ -1,4 +1,4 @@
-# yabr (Yet Another Background Remover)  — Background Removal Desktop App
+# SwiftMask — Background Removal Desktop App
 
 A cross-platform, local-first, GPU-accelerated background removal application.
 Open source (MIT), no telemetry, no cloud. All inference runs on the user's hardware.
@@ -27,7 +27,7 @@ Each row is a decision resolved during grilling. Rationale is one line.
 | A11 | Frontend state + IPC | **Zustand + Tauri events for progress/cancel** | Lightweight state; events stream long inference (up to ~40 s on CPU). |
 | A12 | Export options | **PNG with alpha (transparent) only** | Covers 90% of use; minimal postprocessing. |
 | A13 | Testing | **Rust unit tests (image pipeline) + Vitest + inference smoke test + E2E (Playwright/WebDriver)** | Catch regressions in mask pipeline; verify full flow. |
-| A14 | Name & license | **`blablablu` + MIT** | Permissive; compatible with all model licenses used. |
+| A14 | Name & license | **`SwiftMask` + MIT** | Permissive; compatible with all model licenses used. |
 | A15 | Image pipeline | **`image` + `imageproc` crates** | Proven by reference projects; sufficient for MVP. |
 | A16 | Updates & telemetry | **Tauri updater (signed) + zero telemetry** | Local-first privacy promise; logs local only. |
 | A17 | Bundled benchmark model | **Embed `u2netp` via `include_bytes!`** | 4.7 MB negligible; offline first-run benchmark + offline Turbo. |
@@ -73,7 +73,7 @@ Versions verified as of July 2026.
 Single-crate layout (decision A10):
 
 ```
-blablablu/
+SwiftMask/
 ├── .agents/
 │   └── plan.md                 # this file
 ├── src-tauri/
@@ -137,7 +137,7 @@ Mirrored in `src-tauri/src/models.rs` (source of truth) and `src/lib/models.ts` 
 | Max Quality | `RMBG-2.0` | `rmbg-2.0.onnx` (fp16 if available) | ~173 MB | 1024×1024 | CC BY-NC 4.0 | `briaai/RMBG-2.0` HF |
 
 **Download URLs** point at HuggingFace CDN. A SHA-256 checksum per model is stored in
-`models.rs` and verified after download. Files live in `<appData>/blablablu/models/`.
+`models.rs` and verified after download. Files live in `<appData>/SwiftMask/models/`.
 
 **Preprocessing contract per model** (encoded in registry):
 - `u2netp`: resize 320² (stretch to square), /255, normalize per-channel ImageNet mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225], NCHW float32.
@@ -297,7 +297,7 @@ user abort the in-flight run via `cancel_inference`.
 
 ## 11. Release & Distribution
 
-- **Targets (v1):** `blablablu_x.y.z_x64-setup.exe` (NSIS), `blablablu_x.y.z_amd64.AppImage`.
+- **Targets (v1):** `SwiftMask_x.y.z_x64-setup.exe` (NSIS), `SwiftMask_x.y.z_amd64.AppImage`.
 - **Signing:** Tauri updater requires a signing key pair; the public key is embedded in
   `tauri.conf.json`, the private key is held in GitHub Actions secrets. Windows builds
   are unsigned (code signing cert is post-MVP) — SmartScreen warning expected.

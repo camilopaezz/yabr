@@ -1,4 +1,4 @@
-# Plan de PRs — deepening de arquitectura (yabr)
+# Plan de PRs — deepening de arquitectura (SwiftMask)
 
 Documento de trabajo para retomar en otra sesión.  
 Origen: revisión de arquitectura 2026-07-09 (`/tmp/architecture-review-20260709-194950.html`).  

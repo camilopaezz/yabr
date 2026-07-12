@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn sha256_file_matches_expected() {
-        let data = b"hello yabr";
+        let data = b"hello swiftmask";
         let expected = compute_sha256(data);
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("dummy.bin");
@@ -458,7 +458,7 @@ mod tests {
 
     #[tokio::test]
     async fn download_to_file_fetches_and_verifies_sha256() {
-        let data = b"hello yabr";
+        let data = b"hello swiftmask";
         let expected_hash = compute_sha256(data);
         let (handle, port) = spawn_local_server(data.to_vec()).await;
         let model = ModelEntry {
@@ -522,7 +522,7 @@ mod tests {
 
     #[tokio::test]
     async fn download_to_file_fails_on_sha_mismatch() {
-        let data = b"hello yabr";
+        let data = b"hello swiftmask";
         let (handle, port) = spawn_local_server(data.to_vec()).await;
         let model = ModelEntry {
             id: "test".into(),

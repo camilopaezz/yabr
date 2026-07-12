@@ -84,7 +84,7 @@ export function TitleBar({
     >
       <div className="titlebar-left" data-tauri-drag-region>
         <span className="app-title" data-tauri-drag-region>
-          yabr
+          SwiftMask
         </span>
         <span
           className="ep-chip"

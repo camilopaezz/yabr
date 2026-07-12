@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use yabr_lib::{image_io, inference, models, pipeline};
+use swiftmask_lib::{image_io, inference, models, pipeline};
 
 #[test]
 fn u2netp_smoke_iou() {

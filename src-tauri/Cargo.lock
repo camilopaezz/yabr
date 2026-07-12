@@ -4397,6 +4397,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "swiftmask"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "futures-util",
+ "hex",
+ "image",
+ "imageproc",
+ "log",
+ "ndarray",
+ "ort",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "wgpu",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6394,33 +6421,6 @@ name = "xml-rs"
 version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
-
-[[package]]
-name = "yabr"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "futures-util",
- "hex",
- "image",
- "imageproc",
- "log",
- "ndarray",
- "ort",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "wgpu",
-]
 
 [[package]]
 name = "yoke"

@@ -3,5 +3,5 @@
 
 fn main() {
     env_logger::init();
-    yabr_lib::run()
+    swiftmask_lib::run()
 }

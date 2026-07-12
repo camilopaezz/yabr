@@ -62,17 +62,17 @@ function createDefaultConfig(): MockConfig {
 
 export function getMockState(): MockState {
   if (typeof window === "undefined") {
-    throw new Error("YABR mocks only run in a browser");
+    throw new Error("SwiftMask mocks only run in a browser");
   }
 
-  const w = window as unknown as { __YABR_MOCK__?: MockState };
-  if (!w.__YABR_MOCK__) {
-    w.__YABR_MOCK__ = {
+  const w = window as unknown as { __SWIFTMASK_MOCK__?: MockState };
+  if (!w.__SWIFTMASK_MOCK__) {
+    w.__SWIFTMASK_MOCK__ = {
       config: createDefaultConfig(),
       listeners: {},
       calls: [],
       fixtureBytes: new Uint8Array(),
     };
   }
-  return w.__YABR_MOCK__;
+  return w.__SWIFTMASK_MOCK__;
 }

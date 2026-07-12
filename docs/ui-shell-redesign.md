@@ -1,4 +1,4 @@
-# yabr UI shell redesign
+# SwiftMask UI shell redesign
 
 Frozen decisions from a layout grill (2026-07-09). Implementation target: restyle the existing single-image background-removal flow into a **left rail + big preview** shell. Product logic (inference, models, stores, overwrite rules) stays the same unless a small platform hook is required (file dialog, reveal in folder, window size).
 
@@ -34,7 +34,7 @@ Reference inspiration (Upscayl) is used only for **information architecture**: c
 | U12 | Window size | Default **~1100×720**; min **~900×560** |
 | U13 | Model download | Keep **full-window modal** (current pattern) |
 | U14 | First-run GPU/benchmark | **Full-window blocker** (“Detecting best acceleration…”) until init completes |
-| U15 | Branding chrome | **Custom titlebar** (`decorations: false`) — single `yabr` + EP chip + Settings + window controls; no OS title bar |
+| U15 | Branding chrome | **Custom titlebar** (`decorations: false`) — single `SwiftMask` + EP chip + Settings + window controls; no OS title bar |
 | U16 | EP chip | Short friendly label (`CUDA` / `CPU` / `DirectML` / `CoreML` / `—`); **not clickable** |
 | U17 | Post-success action | **Show in folder** (reveal output path) + existing Re-run |
 | U18 | Styling approach | **CSS variables + plain CSS** (no Tailwind, no CSS modules for this pass) |
@@ -61,7 +61,7 @@ Reference inspiration (Upscayl) is used only for **information architecture**: c
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ yabr [EP]  ……drag……  ⚙  − □ ×                               │  custom titlebar
+│ SwiftMask [EP]  ……drag……  ⚙  − □ ×                               │  custom titlebar
 ├──────────────┬──────────────────────────────────────────────┤
 │ file / mode  │                  BIG PREVIEW                 │
 │ process      │                                              │
@@ -69,7 +69,7 @@ Reference inspiration (Upscayl) is used only for **information architecture**: c
 ```
 
 - Full viewport (no centered `max-width: 960` form column).
-- **Custom titlebar** — OS decorations off; one `yabr` label; drag region; Settings + minimize / maximize / close.
+- **Custom titlebar** — OS decorations off; one `SwiftMask` label; drag region; Settings + minimize / maximize / close.
 - Preview never hosts Process / Cancel / progress (those stay in the rail).
 
 ### 4.2 Left rail (top → bottom)
@@ -122,7 +122,7 @@ Process is disabled when there is no current image or when busy (same rules as t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  yabr              [ CUDA ]                  [ Settings ]   │
+│  SwiftMask              [ CUDA ]                  [ Settings ]   │
 ├──────────────┬──────────────────────────────────────────────┤
 │ No image     │                                              │
 │ [Select img] │     ┌──────────────────────────────────┐     │
@@ -142,7 +142,7 @@ Process is disabled when there is no current image or when busy (same rules as t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  yabr              [ CUDA ]                  [ Settings ]   │
+│  SwiftMask              [ CUDA ]                  [ Settings ]   │
 ├──────────────┬──────────────────────────────────────────────┤
 │ photo.png  ✕ │                                              │
 │ [Change]     │     ┌──────────────────────────────────┐     │
@@ -160,7 +160,7 @@ Process is disabled when there is no current image or when busy (same rules as t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  yabr              [ CUDA ]                  [ Settings ]   │
+│  SwiftMask              [ CUDA ]                  [ Settings ]   │
 ├──────────────┬──────────────────────────────────────────────┤
 │ photo.png    │                                              │
 │              │     ┌──────────────────────────────────┐     │
@@ -178,7 +178,7 @@ Process is disabled when there is no current image or when busy (same rules as t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  yabr              [ CUDA ]                  [ Settings ]   │
+│  SwiftMask              [ CUDA ]                  [ Settings ]   │
 ├──────────────┬──────────────────────────────────────────────┤
 │ photo.png  ✕ │                                              │
 │ [Change]     │     ┌────── before │ after ──────────┐       │
@@ -197,7 +197,7 @@ Process is disabled when there is no current image or when busy (same rules as t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  yabr              [ CUDA ]                  [ Settings ]   │
+│  SwiftMask              [ CUDA ]                  [ Settings ]   │
 ├──────────────┬──────────────────────────────────────────────┤
 │              │     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    │
 │   (shell)    │     ░  ┌─────────────────────────────┐  ░    │

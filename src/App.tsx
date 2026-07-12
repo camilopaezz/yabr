@@ -87,7 +87,7 @@ function App() {
       }
 
       // Resolve quality mode before the UI becomes interactive so Process never
-      // sees a preferred-but-not-downloaded model (e.g. Balanced+).
+      // sees a preferred-but-not-downloaded model (e.g. Balanced).
       // Uses the generic !ready blocker (not the first-run acceleration message).
       try {
         const models = await invokeListModels();
@@ -187,7 +187,7 @@ function App() {
                 svg={logoSvg}
                 className="app-rail-brand"
                 role="img"
-                aria-label="yabr"
+                aria-label="SwiftMask"
               />
 
               <div className="app-rail-section">

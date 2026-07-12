@@ -11,7 +11,7 @@ const DEFAULT_CONFIG = {
   config: {
     execution_provider: "cpu",
     model_id: "u2netp",
-    output_dir: "/yabr/e2e/output",
+    output_dir: "/swiftmask/e2e/output",
     platform: "linux",
   },
   gpuInfo: {
@@ -33,13 +33,13 @@ const DEFAULT_CONFIG = {
   })),
 };
 
-test.describe("yabr", () => {
+test.describe("SwiftMask", () => {
   test.beforeEach(async ({ page }) => {
     const fixtureBytes = await readFile(FIXTURE_PATH);
 
     await page.addInitScript(
       ({ config, fixtureArray }) => {
-        window.__YABR_MOCK__ = {
+        window.__SWIFTMASK_MOCK__ = {
           config,
           listeners: {},
           calls: [],
@@ -57,11 +57,11 @@ test.describe("yabr", () => {
     await page.goto("/");
     await expect(page.getByText("Drop an image here")).toBeVisible();
 
-    const inputPath = "/yabr/e2e/fixtures/sample.png";
-    const expectedOutputPath = "/yabr/e2e/output/sample-nobg-u2netp.png";
+    const inputPath = "/swiftmask/e2e/fixtures/sample.png";
+    const expectedOutputPath = "/swiftmask/e2e/output/sample-nobg-u2netp.png";
 
     await page.evaluate((path) => {
-      const hook = window.__yabrInjectDrop;
+      const hook = window.__swiftmaskInjectDrop;
       if (!hook) {
         throw new Error("E2E drop hook not available");
       }
@@ -76,9 +76,9 @@ test.describe("yabr", () => {
       .poll(
         async () => {
           const calls = await page.evaluate(() => {
-            const state = window.__YABR_MOCK__;
+            const state = window.__SWIFTMASK_MOCK__;
             if (!state) {
-              throw new Error("YABR mock state not available");
+              throw new Error("SwiftMask mock state not available");
             }
             return state.calls;
           });

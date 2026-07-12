@@ -11,7 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use yabr_lib::models::static_registry;
+use swiftmask_lib::models::static_registry;
 
 fn main() {
     let check_only = env::args().any(|a| a == "--check");

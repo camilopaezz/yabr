@@ -5,5 +5,5 @@ interface ImportMetaEnv {
 }
 
 interface Window {
-  __yabrInjectDrop?: (paths: string[]) => void;
+  __swiftmaskInjectDrop?: (paths: string[]) => void;
 }

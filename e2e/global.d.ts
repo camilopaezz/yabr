@@ -1,5 +1,5 @@
 interface Window {
-  __YABR_MOCK__?: {
+  __SWIFTMASK_MOCK__?: {
     config: {
       config: {
         execution_provider: string | null;
@@ -23,5 +23,5 @@ interface Window {
     calls: { cmd: string; args: unknown }[];
     fixtureBytes: Uint8Array;
   };
-  __yabrInjectDrop?: (paths: string[]) => void;
+  __swiftmaskInjectDrop?: (paths: string[]) => void;
 }

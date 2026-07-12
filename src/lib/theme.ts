@@ -1,6 +1,6 @@
 export type Theme = "system" | "light" | "dark";
 
-export const THEME_STORAGE_KEY = "yabr:theme";
+export const THEME_STORAGE_KEY = "swiftmask:theme";
 
 const VALID_THEMES: readonly Theme[] = ["system", "light", "dark"];
 

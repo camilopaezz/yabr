@@ -9,7 +9,7 @@ export { getModelById, MODEL_REGISTRY } from "./models.generated";
 import type { ModelMode, ModelStaticMeta } from "./models.generated";
 
 /** Preferred default quality mode when its weights are on disk. */
-export const PREFERRED_DEFAULT_MODE: ModelMode = "rmbg-1.4";
+export const PREFERRED_DEFAULT_MODE: ModelMode = "isnet-general-use";
 
 /** Always-bundled fallback when the preferred model is not ready. */
 export const FALLBACK_DEFAULT_MODE: ModelMode = "u2netp";
@@ -26,7 +26,7 @@ export function isModelReady(
 }
 
 /**
- * Keep the current mode when ready; otherwise prefer Balanced+ if downloaded,
+ * Keep the current mode when ready; otherwise prefer Balanced if downloaded,
  * else fall back to bundled Turbo.
  */
 export function resolveMode(
