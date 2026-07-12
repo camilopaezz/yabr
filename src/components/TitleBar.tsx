@@ -1,20 +1,19 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  useCallback,
-  useEffect,
-  useState,
   type MouseEvent,
   type ReactNode,
   type Ref,
+  useCallback,
+  useEffect,
+  useState,
 } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { epLabel } from "../lib/epLabel";
-
+import copyIcon from "../assets/icons/titlebar/copy.svg?raw";
+import minusIcon from "../assets/icons/titlebar/minus.svg?raw";
 // Vendored Lucide SVGs (ISC) — see src/assets/icons/titlebar/README.md
 import settingsIcon from "../assets/icons/titlebar/settings.svg?raw";
-import minusIcon from "../assets/icons/titlebar/minus.svg?raw";
 import squareIcon from "../assets/icons/titlebar/square.svg?raw";
-import copyIcon from "../assets/icons/titlebar/copy.svg?raw";
 import xIcon from "../assets/icons/titlebar/x.svg?raw";
+import { epLabel } from "../lib/epLabel";
 
 export type TitleBarProps = {
   ep: string | null;
@@ -22,7 +21,9 @@ export type TitleBarProps = {
   settingsButtonRef?: Ref<HTMLButtonElement>;
 };
 
-async function withWindow(fn: (win: ReturnType<typeof getCurrentWindow>) => Promise<void>) {
+async function withWindow(
+  fn: (win: ReturnType<typeof getCurrentWindow>) => Promise<void>,
+) {
   try {
     await fn(getCurrentWindow());
   } catch (err) {
@@ -40,7 +41,11 @@ function TitleBarIcon({ svg }: { svg: string }) {
   );
 }
 
-export function TitleBar({ ep, onOpenSettings, settingsButtonRef }: TitleBarProps) {
+export function TitleBar({
+  ep,
+  onOpenSettings,
+  settingsButtonRef,
+}: TitleBarProps) {
   const [maximized, setMaximized] = useState(false);
 
   const refreshMaximized = useCallback(async () => {
@@ -81,12 +86,20 @@ export function TitleBar({ ep, onOpenSettings, settingsButtonRef }: TitleBarProp
   };
 
   return (
-    <header className="titlebar" onMouseDown={onDragMouseDown} onDoubleClick={onDragDoubleClick}>
+    <header
+      className="titlebar"
+      onMouseDown={onDragMouseDown}
+      onDoubleClick={onDragDoubleClick}
+    >
       <div className="titlebar-left" data-tauri-drag-region>
         <span className="app-title" data-tauri-drag-region>
           yabr
         </span>
-        <span className="ep-chip" title={ep ?? undefined} data-tauri-drag-region>
+        <span
+          className="ep-chip"
+          title={ep ?? undefined}
+          data-tauri-drag-region
+        >
           {epLabel(ep)}
         </span>
       </div>

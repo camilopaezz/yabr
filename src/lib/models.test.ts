@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { MODEL_REGISTRY } from "./models.generated";
 import {
   FALLBACK_DEFAULT_MODE,
-  PREFERRED_DEFAULT_MODE,
   isModelReady,
-  resolveMode,
   type ModelMeta,
+  PREFERRED_DEFAULT_MODE,
+  resolveMode,
 } from "./models";
+import { MODEL_REGISTRY } from "./models.generated";
 
-function withDownloadState(
-  downloadedIds: readonly string[] = [],
-): ModelMeta[] {
+function withDownloadState(downloadedIds: readonly string[] = []): ModelMeta[] {
   return MODEL_REGISTRY.map((m) => ({
     ...m,
     downloaded: m.bundled || downloadedIds.includes(m.id),

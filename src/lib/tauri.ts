@@ -119,7 +119,9 @@ export function invokeSetConfig(config: Config): Promise<void> {
   return tauriInvoke("set_config", { config });
 }
 
-export function invokeRemoveImageBackground(args: ProcessingJob): Promise<void> {
+export function invokeRemoveImageBackground(
+  args: ProcessingJob,
+): Promise<void> {
   return tauriInvoke("remove_image_background", { args });
 }
 
@@ -134,17 +136,23 @@ export function invokeCancelInference(): Promise<void> {
 export function listenInferenceProgress(
   handler: (payload: InferenceProgressPayload) => void,
 ): Promise<() => void> {
-  return tauriListen<InferenceProgressPayload>(EVENT_PROGRESS, (event) => handler(event.payload));
+  return tauriListen<InferenceProgressPayload>(EVENT_PROGRESS, (event) =>
+    handler(event.payload),
+  );
 }
 
 export function listenInferenceDone(
   handler: (payload: InferenceDonePayload) => void,
 ): Promise<() => void> {
-  return tauriListen<InferenceDonePayload>(EVENT_DONE, (event) => handler(event.payload));
+  return tauriListen<InferenceDonePayload>(EVENT_DONE, (event) =>
+    handler(event.payload),
+  );
 }
 
 export function listenInferenceError(
   handler: (payload: InferenceErrorPayload) => void,
 ): Promise<() => void> {
-  return tauriListen<InferenceErrorPayload>(EVENT_ERROR, (event) => handler(event.payload));
+  return tauriListen<InferenceErrorPayload>(EVENT_ERROR, (event) =>
+    handler(event.payload),
+  );
 }

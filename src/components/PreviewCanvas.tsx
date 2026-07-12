@@ -1,11 +1,11 @@
+import { readFile } from "@tauri-apps/plugin-fs";
 import {
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
-import { readFile } from "@tauri-apps/plugin-fs";
 
 export type PreviewCanvasProps = {
   inputPath: string | null;
@@ -120,7 +120,11 @@ type CompareSliderProps = {
   aspectRatio: number;
 };
 
-function CompareSlider({ inputUrl, outputUrl, aspectRatio }: CompareSliderProps) {
+function CompareSlider({
+  inputUrl,
+  outputUrl,
+  aspectRatio,
+}: CompareSliderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(50);
   // Keep drag state in a ref so pointermove does not re-bind listeners.
@@ -213,7 +217,11 @@ function CompareSlider({ inputUrl, outputUrl, aspectRatio }: CompareSliderProps)
         draggable={false}
         style={{ clipPath: beforeClip }}
       />
-      <div className="compare-handle" style={{ left: `${position}%` }} aria-hidden>
+      <div
+        className="compare-handle"
+        style={{ left: `${position}%` }}
+        aria-hidden
+      >
         <span className="compare-handle-knob" />
       </div>
       <div className="compare-labels" aria-hidden>
@@ -232,7 +240,9 @@ export function PreviewCanvas({
 }: PreviewCanvasProps) {
   const inputUrl = useObjectUrl(inputPath);
   const outputUrl = useObjectUrl(canCompare ? outputPath : null);
-  const showCompare = Boolean(canCompare && inputPath && outputPath && inputUrl && outputUrl);
+  const showCompare = Boolean(
+    canCompare && inputPath && outputPath && inputUrl && outputUrl,
+  );
 
   // Prefer output AR for compare (same pixel size as processed frame); fall back to input.
   const inputAr = useImageAspectRatio(inputUrl);
@@ -255,10 +265,10 @@ export function PreviewCanvas({
   return (
     <div className={`preview-canvas${isDragging ? " is-dragging" : ""}`}>
       <div className="preview-stage">
-        {showCompare && aspectRatio != null ? (
+        {showCompare && aspectRatio != null && inputUrl && outputUrl ? (
           <CompareSlider
-            inputUrl={inputUrl!}
-            outputUrl={outputUrl!}
+            inputUrl={inputUrl}
+            outputUrl={outputUrl}
             aspectRatio={aspectRatio}
           />
         ) : inputUrl && aspectRatio != null ? (

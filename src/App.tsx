@@ -1,25 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { FileBlock } from "./components/FileBlock";
-import { ModeSelector } from "./components/ModeSelector";
 import { ImagePanel } from "./components/ImagePanel";
+import { ModeSelector } from "./components/ModeSelector";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TitleBar } from "./components/TitleBar";
-import { acceptDrop, initCurrentImageListeners, syncOutputPath } from "./lib/currentImage";
-import { useTauriFileDrop } from "./lib/useTauriFileDrop";
-import { useImageStore } from "./stores/imageStore";
+import {
+  acceptDrop,
+  initCurrentImageListeners,
+  syncOutputPath,
+} from "./lib/currentImage";
 import {
   FALLBACK_DEFAULT_MODE,
   PREFERRED_DEFAULT_MODE,
   resolveMode,
 } from "./lib/models";
-import { settingsStore, useSettingsStore } from "./stores/settingsStore";
 import {
   invokeDetectGpu,
   invokeGetConfig,
   invokeListModels,
   invokeRunBenchmark,
 } from "./lib/tauri";
+import { applyTheme, persistTheme } from "./lib/theme";
+import { useTauriFileDrop } from "./lib/useTauriFileDrop";
+import { useImageStore } from "./stores/imageStore";
+import { settingsStore, useSettingsStore } from "./stores/settingsStore";
 import "./App.css";
 
 function App() {
@@ -32,8 +37,10 @@ function App() {
   const ep = useSettingsStore((state) => state.ep);
   const mode = useSettingsStore((state) => state.mode);
   const outputDir = useSettingsStore((state) => state.outputDir);
+  const theme = useSettingsStore((state) => state.theme);
   const { isDragging, paths } = useTauriFileDrop();
   const lastProcessedRef = useRef<string[] | null>(null);
+  const themeSyncedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +126,17 @@ function App() {
     syncOutputPath({ mode, outputDir });
   }, [mode, outputDir]);
 
+  // Keep the DOM + localStorage in sync with the theme store. `main.tsx`
+  // applies and reads the initial value pre-paint; skip the first run here.
+  useEffect(() => {
+    applyTheme(theme);
+    if (!themeSyncedRef.current) {
+      themeSyncedRef.current = true;
+      return;
+    }
+    persistTheme(theme);
+  }, [theme]);
+
   useEffect(() => {
     if (!settingsVisible) return;
     const onKey = (e: KeyboardEvent) => {
@@ -136,7 +154,8 @@ function App() {
   // Frameless window: always mount TitleBar so drag/close work during first-run
   // and cold-start. Blocker overlays content only (CSS leaves titlebar free).
   const canCompare =
-    current?.status === "done" && Boolean(current.inputPath && current.outputPath);
+    current?.status === "done" &&
+    Boolean(current.inputPath && current.outputPath);
 
   return (
     <div className="app-shell">

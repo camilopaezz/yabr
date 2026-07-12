@@ -1,7 +1,7 @@
-import { defineConfig } from "vite";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import path from "path";
-import { fileURLToPath } from "url";
+import { defineConfig } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,11 +14,26 @@ function getE2EAliases(): Record<string, string> {
   }
   return {
     "@tauri-apps/api/core": path.resolve(__dirname, "e2e/mocks/tauri-core.ts"),
-    "@tauri-apps/api/event": path.resolve(__dirname, "e2e/mocks/tauri-event.ts"),
-    "@tauri-apps/api/window": path.resolve(__dirname, "e2e/mocks/tauri-window.ts"),
-    "@tauri-apps/plugin-fs": path.resolve(__dirname, "e2e/mocks/tauri-plugin-fs.ts"),
-    "@tauri-apps/plugin-dialog": path.resolve(__dirname, "e2e/mocks/tauri-plugin-dialog.ts"),
-    "@tauri-apps/plugin-opener": path.resolve(__dirname, "e2e/mocks/tauri-plugin-opener.ts"),
+    "@tauri-apps/api/event": path.resolve(
+      __dirname,
+      "e2e/mocks/tauri-event.ts",
+    ),
+    "@tauri-apps/api/window": path.resolve(
+      __dirname,
+      "e2e/mocks/tauri-window.ts",
+    ),
+    "@tauri-apps/plugin-fs": path.resolve(
+      __dirname,
+      "e2e/mocks/tauri-plugin-fs.ts",
+    ),
+    "@tauri-apps/plugin-dialog": path.resolve(
+      __dirname,
+      "e2e/mocks/tauri-plugin-dialog.ts",
+    ),
+    "@tauri-apps/plugin-opener": path.resolve(
+      __dirname,
+      "e2e/mocks/tauri-plugin-opener.ts",
+    ),
   };
 }
 
@@ -49,4 +64,3 @@ export default defineConfig(async () => ({
     exclude: ["e2e/**", "**/node_modules/**", "**/dist/**", "**/.opencode/**"],
   },
 }));
-

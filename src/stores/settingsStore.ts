@@ -1,14 +1,15 @@
-import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
+import { FALLBACK_DEFAULT_MODE, type ModelMode } from "../lib/models";
 import type {
   BenchmarkResult,
   GpuInfo,
   JobTimings,
   RuntimeInfo,
 } from "../lib/tauri";
-import { FALLBACK_DEFAULT_MODE, type ModelMode } from "../lib/models";
+import type { Theme } from "../lib/theme";
 
-export type Theme = "system" | "light" | "dark";
+export type { Theme } from "../lib/theme";
 
 export type SettingsState = {
   mode: ModelMode;
@@ -32,25 +33,27 @@ export type SettingsActions = {
   setLastJobTimings: (lastJobTimings: JobTimings | null) => void;
 };
 
-export const settingsStore = createStore<SettingsState & SettingsActions>((set) => ({
-  // Bundled Turbo until App / ModeSelector reconcile against list_models.
-  mode: FALLBACK_DEFAULT_MODE,
-  outputDir: null,
-  ep: null,
-  theme: "system",
-  gpuInfo: null,
-  benchmarkResult: null,
-  runtimeInfo: null,
-  lastJobTimings: null,
-  setMode: (mode) => set({ mode }),
-  setOutputDir: (outputDir) => set({ outputDir }),
-  setEp: (ep) => set({ ep }),
-  setTheme: (theme) => set({ theme }),
-  setGpuInfo: (gpuInfo) => set({ gpuInfo }),
-  setBenchmarkResult: (benchmarkResult) => set({ benchmarkResult }),
-  setRuntimeInfo: (runtimeInfo) => set({ runtimeInfo }),
-  setLastJobTimings: (lastJobTimings) => set({ lastJobTimings }),
-}));
+export const settingsStore = createStore<SettingsState & SettingsActions>(
+  (set) => ({
+    // Bundled Turbo until App / ModeSelector reconcile against list_models.
+    mode: FALLBACK_DEFAULT_MODE,
+    outputDir: null,
+    ep: null,
+    theme: "system",
+    gpuInfo: null,
+    benchmarkResult: null,
+    runtimeInfo: null,
+    lastJobTimings: null,
+    setMode: (mode) => set({ mode }),
+    setOutputDir: (outputDir) => set({ outputDir }),
+    setEp: (ep) => set({ ep }),
+    setTheme: (theme) => set({ theme }),
+    setGpuInfo: (gpuInfo) => set({ gpuInfo }),
+    setBenchmarkResult: (benchmarkResult) => set({ benchmarkResult }),
+    setRuntimeInfo: (runtimeInfo) => set({ runtimeInfo }),
+    setLastJobTimings: (lastJobTimings) => set({ lastJobTimings }),
+  }),
+);
 
 export function useSettingsStore(): SettingsState & SettingsActions;
 export function useSettingsStore<T>(

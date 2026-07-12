@@ -1,7 +1,12 @@
-import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 
-export type ImageStatus = "ready" | "processing" | "done" | "error" | "cancelled";
+export type ImageStatus =
+  | "ready"
+  | "processing"
+  | "done"
+  | "error"
+  | "cancelled";
 
 export type ImageItem = {
   id: string;
@@ -34,12 +39,11 @@ export const imageStore = createStore<ImageState & ImageActions>((set) => ({
 }));
 
 export function useImageStore(): ImageState & ImageActions;
-export function useImageStore<T>(selector: (state: ImageState & ImageActions) => T): T;
+export function useImageStore<T>(
+  selector: (state: ImageState & ImageActions) => T,
+): T;
 export function useImageStore<T>(
   selector?: (state: ImageState & ImageActions) => T,
 ): (ImageState & ImageActions) | T {
-  return useStore(
-    imageStore,
-    selector ?? ((state) => state as unknown as T),
-  );
+  return useStore(imageStore, selector ?? ((state) => state as unknown as T));
 }

@@ -11,6 +11,8 @@ export function getCurrentWindow() {
     unmaximize: async () => {},
     close: async () => {},
     isMaximized: async () => false,
-    onResized: async (_handler: () => void): Promise<Unlisten> => () => {},
+    onResized:
+      async (_handler: () => void): Promise<Unlisten> =>
+      () => {},
   };
 }

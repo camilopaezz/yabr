@@ -13,10 +13,26 @@
   --rail-width: 300px;
   --titlebar-height: 40px;
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  --checkerboard-bg: #fff;
+  --checkerboard-tile: #ccc;
+  --_dark-bg: #18181b;
+  --_dark-bg-rail: #1f1f23;
+  --_dark-bg-preview: #141416;
+  --_dark-bg-elevated: #27272a;
+  --_dark-fg: #fafafa;
+  --_dark-fg-muted: #a1a1aa;
+  --_dark-border: rgba(250, 250, 250, 0.12);
+  --_dark-accent: #5b8def;
+  --_dark-accent-hover: #7aa2f5;
+  --_dark-danger: #f87171;
+  --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --_dark-checkerboard-bg: #2a2a2e;
+  --_dark-checkerboard-tile: #3a3a40;
   /* Make native <select>/<option> follow light/dark with our theme. */
   color-scheme: light;
 
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
   line-height: 1.45;
   font-weight: 400;
@@ -29,21 +45,42 @@
   -webkit-text-size-adjust: 100%;
 }
 
+/* System dark: apply dark vars unless the user forced light. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #18181b;
-    --bg-rail: #1f1f23;
-    --bg-preview: #141416;
-    --bg-elevated: #27272a;
-    --fg: #fafafa;
-    --fg-muted: #a1a1aa;
-    --border: rgba(250, 250, 250, 0.12);
-    --accent: #5b8def;
-    --accent-hover: #7aa2f5;
-    --danger: #f87171;
-    --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  :root:not([data-theme="light"]) {
+    --bg: var(--_dark-bg);
+    --bg-rail: var(--_dark-bg-rail);
+    --bg-preview: var(--_dark-bg-preview);
+    --bg-elevated: var(--_dark-bg-elevated);
+    --fg: var(--_dark-fg);
+    --fg-muted: var(--_dark-fg-muted);
+    --border: var(--_dark-border);
+    --accent: var(--_dark-accent);
+    --accent-hover: var(--_dark-accent-hover);
+    --danger: var(--_dark-danger);
+    --shadow: var(--_dark-shadow);
+    --checkerboard-bg: var(--_dark-checkerboard-bg);
+    --checkerboard-tile: var(--_dark-checkerboard-tile);
     color-scheme: dark;
   }
+}
+
+/* Explicit dark override (system may be light). */
+:root[data-theme="dark"] {
+  --bg: var(--_dark-bg);
+  --bg-rail: var(--_dark-bg-rail);
+  --bg-preview: var(--_dark-bg-preview);
+  --bg-elevated: var(--_dark-bg-elevated);
+  --fg: var(--_dark-fg);
+  --fg-muted: var(--_dark-fg-muted);
+  --border: var(--_dark-border);
+  --accent: var(--_dark-accent);
+  --accent-hover: var(--_dark-accent-hover);
+  --danger: var(--_dark-danger);
+  --shadow: var(--_dark-shadow);
+  --checkerboard-bg: var(--_dark-checkerboard-bg);
+  --checkerboard-tile: var(--_dark-checkerboard-tile);
+  color-scheme: dark;
 }
 
 *,
@@ -74,7 +111,10 @@ button {
   border: 1px solid var(--border);
   padding: 0.5em 0.9em;
   background: var(--bg-elevated);
-  transition: border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 button:hover:not(:disabled) {
@@ -121,7 +161,8 @@ select {
 select {
   appearance: none;
   -webkit-appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
     linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
   background-position:
     calc(100% - 14px) calc(50% - 3px),
@@ -576,7 +617,9 @@ button.mode-option-download:disabled {
   border-radius: 12px;
   max-width: 360px;
   width: calc(100% - 48px);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .preview-canvas.is-dragging .preview-empty {
@@ -635,15 +678,19 @@ button.mode-option-download:disabled {
   border: 1px solid var(--border);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   line-height: 0;
-  /* checkerboard for alpha */
-  background-color: #fff;
+  /* checkerboard for alpha; colors follow --checkerboard-* on :root */
+  background-color: var(--checkerboard-bg);
   background-image:
-    linear-gradient(45deg, #ccc 25%, transparent 25%),
-    linear-gradient(-45deg, #ccc 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #ccc 75%),
-    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    linear-gradient(45deg, var(--checkerboard-tile) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checkerboard-tile) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checkerboard-tile) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checkerboard-tile) 75%);
   background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
 }
 
 /* Before AR is known, fall back to intrinsic image sizing. */
@@ -652,20 +699,6 @@ button.mode-option-download:disabled {
   height: auto;
   max-width: 100%;
   max-height: 100%;
-}
-
-@media (prefers-color-scheme: dark) {
-  .preview-image-frame,
-  .compare-slider {
-    background-color: #2a2a2e;
-    background-image:
-      linear-gradient(45deg, #3a3a40 25%, transparent 25%),
-      linear-gradient(-45deg, #3a3a40 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #3a3a40 75%),
-      linear-gradient(-45deg, transparent 75%, #3a3a40 75%);
-    background-size: 16px 16px;
-    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  }
 }
 
 .preview-image-frame img {

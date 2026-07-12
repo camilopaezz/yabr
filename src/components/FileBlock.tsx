@@ -1,9 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import {
-  acceptDrop,
-  clearCurrent,
-  isProcessBusy,
-} from "../lib/currentImage";
+import { acceptDrop, clearCurrent, isProcessBusy } from "../lib/currentImage";
 import { useImageStore } from "../stores/imageStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -54,7 +50,11 @@ export function FileBlock() {
       <div className="file-block">
         <div className="file-block-empty">No image</div>
         <div className="file-block-actions">
-          <button type="button" className="btn-primary" onClick={() => void handleSelect()}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => void handleSelect()}
+          >
             Select image
           </button>
         </div>
@@ -68,7 +68,11 @@ export function FileBlock() {
         {fileName(current.inputPath)}
       </div>
       <div className="file-block-actions">
-        <button type="button" onClick={() => void handleSelect()} disabled={busy}>
+        <button
+          type="button"
+          onClick={() => void handleSelect()}
+          disabled={busy}
+        >
           Change
         </button>
         <button

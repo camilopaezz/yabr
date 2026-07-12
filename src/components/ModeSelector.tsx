@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { settingsStore, useSettingsStore } from "../stores/settingsStore";
 import {
   FALLBACK_DEFAULT_MODE,
   isModelReady,
-  resolveMode,
   type ModelMeta,
   type ModelMode,
+  resolveMode,
 } from "../lib/models";
 import {
-  invokeListModels,
   invokeDownloadModel,
+  invokeListModels,
   listenModelDownload,
 } from "../lib/tauri";
+import { settingsStore, useSettingsStore } from "../stores/settingsStore";
 
 export function ModeSelector() {
   const mode = useSettingsStore((state) => state.mode);
@@ -33,6 +33,7 @@ export function ModeSelector() {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only reconcile
   useEffect(() => {
     invokeListModels()
       .then(applyModels)
@@ -42,9 +43,9 @@ export function ModeSelector() {
         // preferred-but-unverified model.
         setMode(FALLBACK_DEFAULT_MODE);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only reconcile
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: download session keyed by model
   useEffect(() => {
     if (!downloading) return;
 
@@ -93,7 +94,6 @@ export function ModeSelector() {
       cleanedUp = true;
       unsubscribe?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- download session keyed by model
   }, [downloading, setMode]);
 
   const startDownload = (model: ModelMeta) => {

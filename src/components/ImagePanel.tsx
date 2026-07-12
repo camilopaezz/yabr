@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useImageStore, type ImageItem } from "../stores/imageStore";
-import { ProgressBar } from "./ProgressBar";
+import { useState } from "react";
 import {
   cancelProcess,
   prodCancelDeps,
   prodStartProcessDeps,
   startProcess,
 } from "../lib/currentImage";
+import { type ImageItem, useImageStore } from "../stores/imageStore";
+import { ProgressBar } from "./ProgressBar";
 
 function statusLabel(item: ImageItem): string {
   switch (item.status) {

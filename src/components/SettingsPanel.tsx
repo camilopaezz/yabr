@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSettingsStore } from "../stores/settingsStore";
+import { epLabel } from "../lib/epLabel";
 import {
   invokeDetectGpu,
   invokeGetConfig,
@@ -8,16 +8,17 @@ import {
   invokeRunBenchmark,
   invokeSetEp,
 } from "../lib/tauri";
-import { epLabel } from "../lib/epLabel";
+import { isTheme } from "../lib/theme";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export type SettingsPanelProps = {
   visible: boolean;
 };
 
 function formatVram(bytes: number): string {
-  const gib = bytes / (1024 ** 3);
+  const gib = bytes / 1024 ** 3;
   if (gib >= 1) return `${gib.toFixed(1)} GiB`;
-  const mib = bytes / (1024 ** 2);
+  const mib = bytes / 1024 ** 2;
   return `${mib.toFixed(0)} MiB`;
 }
 
@@ -31,11 +32,13 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
   const {
     ep,
     outputDir,
+    theme,
     gpuInfo,
     runtimeInfo,
     lastJobTimings,
     setEp: setEpInStore,
     setOutputDir,
+    setTheme,
     setGpuInfo,
     setRuntimeInfo,
   } = useSettingsStore();
@@ -89,6 +92,24 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
   return (
     <div className="settings-panel">
       <div className="settings-field">
+        <label htmlFor="settings-theme">Theme</label>
+        <select
+          id="settings-theme"
+          className="settings-select"
+          value={theme}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (isTheme(value)) setTheme(value);
+          }}
+        >
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+        <div className="settings-hint">Override the system appearance</div>
+      </div>
+
+      <div className="settings-field">
         <label htmlFor="settings-ep">Execution provider</label>
         <select
           id="settings-ep"
@@ -108,8 +129,9 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       </div>
 
       <div className="settings-field">
-        <label>Output directory</label>
+        <label htmlFor="settings-output-dir">Output directory</label>
         <button
+          id="settings-output-dir"
           type="button"
           onClick={() => void handlePickOutputDir()}
           title={outputDir ?? "Same as input (default)"}
@@ -128,7 +150,11 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       </div>
 
       <div className="settings-field">
-        <button type="button" onClick={() => void handleBenchmark()} disabled={loading}>
+        <button
+          type="button"
+          onClick={() => void handleBenchmark()}
+          disabled={loading}
+        >
           {loading ? "Benchmarking…" : "Re-run benchmark"}
         </button>
       </div>
@@ -146,7 +172,9 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
               </div>
               <div>
                 EPs:{" "}
-                {gpuInfo.available_eps.map((epOption) => epLabel(epOption)).join(", ")}
+                {gpuInfo.available_eps
+                  .map((epOption) => epLabel(epOption))
+                  .join(", ")}
               </div>
               <div>Opt: {gpuInfo.optimization}</div>
             </>

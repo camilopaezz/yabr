@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 
 type DragDropPayload = {
   paths: string[];
@@ -46,7 +46,9 @@ export function useTauriFileDrop(): TauriFileDropState {
 
     return () => {
       cancelled = true;
-      unsubs.forEach((unsub) => unsub());
+      for (const unsub of unsubs) {
+        unsub();
+      }
     };
   }, []);
 

@@ -30,7 +30,10 @@ export function invoke<T>(
     case "pick_output_dir":
       return Promise.resolve(state.config.config.output_dir as T);
     case "remove_image_background": {
-      const inner = (args as Record<string, unknown>).args as { id: string; outputPath: string };
+      const inner = (args as Record<string, unknown>).args as {
+        id: string;
+        outputPath: string;
+      };
       return simulateInference(inner) as Promise<T>;
     }
     case "cancel_inference":
@@ -45,13 +48,18 @@ export function invoke<T>(
   }
 }
 
-function simulateInference(args: { id: string; outputPath: string }): Promise<void> {
+function simulateInference(args: {
+  id: string;
+  outputPath: string;
+}): Promise<void> {
   const state = getMockState();
   const { id, outputPath } = args;
 
   return new Promise((resolve) => {
     const emit = (event: string, payload: unknown) => {
-      (state.listeners[event] ?? []).forEach((handler) => handler({ payload }));
+      for (const handler of state.listeners[event] ?? []) {
+        handler({ payload });
+      }
     };
 
     setTimeout(() => {
@@ -87,7 +95,9 @@ function simulateDownload(modelId: string): Promise<void> {
   const state = getMockState();
   return new Promise((resolve) => {
     const emit = (event: string, payload: unknown) => {
-      (state.listeners[event] ?? []).forEach((handler) => handler({ payload }));
+      for (const handler of state.listeners[event] ?? []) {
+        handler({ payload });
+      }
     };
 
     setTimeout(
@@ -118,7 +128,8 @@ export function listen<T>(
   if (!state.listeners[eventName]) {
     state.listeners[eventName] = [];
   }
-  const wrapped = (event: { payload: unknown }) => handler(event as { payload: T });
+  const wrapped = (event: { payload: unknown }) =>
+    handler(event as { payload: T });
   state.listeners[eventName].push(wrapped);
   return Promise.resolve(() => {
     const idx = state.listeners[eventName].indexOf(wrapped);
@@ -128,6 +139,6 @@ export function listen<T>(
   });
 }
 
-export function convertFileSrc(filePath: string, protocol?: string): string {
+export function convertFileSrc(filePath: string, _protocol?: string): string {
   return `file://${filePath}`;
 }

@@ -1,7 +1,7 @@
-import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "@playwright/test";
 import { MODEL_REGISTRY } from "../src/lib/models";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -105,4 +105,3 @@ test.describe("yabr", () => {
     expect(size.height).toBeGreaterThan(0);
   });
 });
-

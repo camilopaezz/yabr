@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { imageStore, type ImageItem } from "./imageStore";
+import { beforeEach, describe, expect, it } from "vitest";
+import { type ImageItem, imageStore } from "./imageStore";
 
 function makeItem(overrides: Partial<ImageItem> = {}): ImageItem {
   return {

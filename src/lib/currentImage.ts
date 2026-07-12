@@ -1,18 +1,18 @@
-import { exists } from "@tauri-apps/plugin-fs";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { imageStore, type ImageItem } from "../stores/imageStore";
+import { exists } from "@tauri-apps/plugin-fs";
+import { type ImageItem, imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
-import { deriveOutputPath } from "./path";
 import { shouldProceedWithOverwrite } from "./overwrite";
+import { deriveOutputPath } from "./path";
 import {
+  type InferenceDonePayload,
+  type InferenceErrorPayload,
+  type InferenceProgressPayload,
   invokeCancelInference,
   invokeRemoveImageBackground,
   listenInferenceDone,
   listenInferenceError,
   listenInferenceProgress,
-  type InferenceDonePayload,
-  type InferenceErrorPayload,
-  type InferenceProgressPayload,
 } from "./tauri";
 
 export type ProcessSettings = { mode: string; outputDir: string | null };
@@ -64,7 +64,10 @@ export function isProcessBusy(): boolean {
   return processGate || imageStore.getState().current?.status === "processing";
 }
 
-export function acceptDrop(paths: string[], settings: ProcessSettings): boolean {
+export function acceptDrop(
+  paths: string[],
+  settings: ProcessSettings,
+): boolean {
   const imagePaths = paths.filter(isImageFile);
   if (imagePaths.length === 0) return false;
   if (isProcessBusy()) return false;
@@ -86,7 +89,11 @@ export function acceptDrop(paths: string[], settings: ProcessSettings): boolean 
 export function syncOutputPath(settings: ProcessSettings): void {
   const current = imageStore.getState().current;
   if (!current || isProcessBusy()) return;
-  const outputPath = deriveOutputPath(current.inputPath, settings.outputDir, settings.mode);
+  const outputPath = deriveOutputPath(
+    current.inputPath,
+    settings.outputDir,
+    settings.mode,
+  );
   if (outputPath === current.outputPath) return;
 
   // If mode/output dir change after a successful run, the derived path is not
@@ -105,7 +112,9 @@ export function syncOutputPath(settings: ProcessSettings): void {
   imageStore.getState().patch({ outputPath });
 }
 
-export async function startProcess(deps: StartProcessDeps): Promise<StartProcessResult> {
+export async function startProcess(
+  deps: StartProcessDeps,
+): Promise<StartProcessResult> {
   const current = imageStore.getState().current;
   if (!current) return "no-image";
   if (isProcessBusy()) return "already-processing";
@@ -116,9 +125,17 @@ export async function startProcess(deps: StartProcessDeps): Promise<StartProcess
 
   try {
     const settings = deps.getSettings();
-    const outputPath = deriveOutputPath(inputPath, settings.outputDir, settings.mode);
+    const outputPath = deriveOutputPath(
+      inputPath,
+      settings.outputDir,
+      settings.mode,
+    );
 
-    const proceed = await shouldProceedWithOverwrite(outputPath, deps.exists, deps.ask);
+    const proceed = await shouldProceedWithOverwrite(
+      outputPath,
+      deps.exists,
+      deps.ask,
+    );
     if (!proceed) return "skipped";
 
     // Re-validate after await: drop/clear/second start must not drive a stale job.
@@ -175,7 +192,11 @@ export function clearCurrent(): boolean {
   return true;
 }
 
-export function applyProgress(payload: { id: string; stage: string; pct: number }): void {
+export function applyProgress(payload: {
+  id: string;
+  stage: string;
+  pct: number;
+}): void {
   const current = imageStore.getState().current;
   if (!current || current.id !== payload.id) return;
   // Do not resurrect done/error/ready via late progress events.
@@ -216,15 +237,19 @@ export async function initCurrentImageListeners(): Promise<() => void> {
     },
   );
 
-  const unsubscribeDone = await listenInferenceDone((payload: InferenceDonePayload) => {
-    applyDone(payload);
-    // Always record last successful job timings for Settings debug meta.
-    settingsStore.getState().setLastJobTimings(payload.timings);
-  });
+  const unsubscribeDone = await listenInferenceDone(
+    (payload: InferenceDonePayload) => {
+      applyDone(payload);
+      // Always record last successful job timings for Settings debug meta.
+      settingsStore.getState().setLastJobTimings(payload.timings);
+    },
+  );
 
-  const unsubscribeError = await listenInferenceError((payload: InferenceErrorPayload) => {
-    applyError(payload);
-  });
+  const unsubscribeError = await listenInferenceError(
+    (payload: InferenceErrorPayload) => {
+      applyError(payload);
+    },
+  );
 
   return () => {
     unsubscribeProgress();

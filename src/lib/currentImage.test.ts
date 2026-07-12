@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
 import {
@@ -11,20 +11,25 @@ import {
   initCurrentImageListeners,
   isProcessBusy,
   resetProcessGateForTests,
+  type StartProcessDeps,
   startProcess,
   syncOutputPath,
-  type StartProcessDeps,
 } from "./currentImage";
 
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (eventName: string, handler: (event: { payload: unknown }) => void) => {
-    handlers[eventName] = handler;
-    return () => {
-      delete handlers[eventName];
-    };
-  }),
+  listen: vi.fn(
+    async (
+      eventName: string,
+      handler: (event: { payload: unknown }) => void,
+    ) => {
+      handlers[eventName] = handler;
+      return () => {
+        delete handlers[eventName];
+      };
+    },
+  ),
   invoke: vi.fn(),
 }));
 
@@ -36,7 +41,13 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(),
 }));
 
-function makeReadyItem(overrides: Partial<{ id: string; inputPath: string; outputPath: string | null }> = {}) {
+function makeReadyItem(
+  overrides: Partial<{
+    id: string;
+    inputPath: string;
+    outputPath: string | null;
+  }> = {},
+) {
   return {
     id: overrides.id ?? "img-1",
     inputPath: overrides.inputPath ?? "/tmp/in.png",
@@ -63,7 +74,9 @@ describe("currentImage", () => {
     resetProcessGateForTests();
     imageStore.setState({ current: null });
     settingsStore.getState().setLastJobTimings(null);
-    Object.keys(handlers).forEach((key) => delete handlers[key]);
+    for (const key of Object.keys(handlers)) {
+      delete handlers[key];
+    }
   });
 
   describe("acceptDrop", () => {
@@ -81,16 +94,22 @@ describe("currentImage", () => {
         ...makeReadyItem(),
         status: "processing",
       });
-      const ok = acceptDrop(["/tmp/new.jpg"], { mode: "u2netp", outputDir: null });
+      const ok = acceptDrop(["/tmp/new.jpg"], {
+        mode: "u2netp",
+        outputDir: null,
+      });
       expect(ok).toBe(false);
       expect(imageStore.getState().current?.inputPath).toBe("/tmp/in.png");
     });
 
     it("creates a ready item from the first image path", () => {
-      const ok = acceptDrop(["/tmp/notes.txt", "/tmp/photo.jpg", "/tmp/other.png"], {
-        mode: "u2netp",
-        outputDir: "/out",
-      });
+      const ok = acceptDrop(
+        ["/tmp/notes.txt", "/tmp/photo.jpg", "/tmp/other.png"],
+        {
+          mode: "u2netp",
+          outputDir: "/out",
+        },
+      );
       expect(ok).toBe(true);
       const current = imageStore.getState().current;
       expect(current?.inputPath).toBe("/tmp/photo.jpg");
@@ -105,9 +124,13 @@ describe("currentImage", () => {
 
   describe("syncOutputPath", () => {
     it("updates outputPath when mode or outputDir change", () => {
-      imageStore.getState().set(makeReadyItem({ outputPath: "/tmp/in-nobg-u2netp.png" }));
+      imageStore
+        .getState()
+        .set(makeReadyItem({ outputPath: "/tmp/in-nobg-u2netp.png" }));
       syncOutputPath({ mode: "rmbg-2.0", outputDir: "/exports" });
-      expect(imageStore.getState().current?.outputPath).toBe("/exports/in-nobg-rmbg-2.0.png");
+      expect(imageStore.getState().current?.outputPath).toBe(
+        "/exports/in-nobg-rmbg-2.0.png",
+      );
     });
 
     it("skips when processing", () => {
@@ -203,7 +226,9 @@ describe("currentImage", () => {
       });
       expect(imageStore.getState().current?.status).toBe("processing");
       expect(imageStore.getState().current?.stage).toBe("starting");
-      expect(imageStore.getState().current?.outputPath).toBe("/exports/pic-nobg-rmbg-2.0.png");
+      expect(imageStore.getState().current?.outputPath).toBe(
+        "/exports/pic-nobg-rmbg-2.0.png",
+      );
     });
 
     it("returns failed and patches command failed when invoke throws", async () => {
@@ -240,10 +265,14 @@ describe("currentImage", () => {
       expect(isProcessBusy()).toBe(true);
 
       // Gate blocks drop while confirming.
-      expect(acceptDrop(["/tmp/other.png"], { mode: "u2netp", outputDir: null })).toBe(false);
+      expect(
+        acceptDrop(["/tmp/other.png"], { mode: "u2netp", outputDir: null }),
+      ).toBe(false);
 
       // Hostile race: store replaced while dialog open (bypassing acceptDrop gate).
-      imageStore.getState().set(makeReadyItem({ id: "replaced", inputPath: "/tmp/other.png" }));
+      imageStore
+        .getState()
+        .set(makeReadyItem({ id: "replaced", inputPath: "/tmp/other.png" }));
       resolveAsk(true);
 
       const result = await pending;

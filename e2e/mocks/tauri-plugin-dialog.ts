@@ -14,6 +14,9 @@ export function message(_message: string, _options?: unknown): Promise<string> {
   return Promise.resolve("Ok");
 }
 
-export function confirm(_message: string, _options?: unknown): Promise<boolean> {
+export function confirm(
+  _message: string,
+  _options?: unknown,
+): Promise<boolean> {
   return Promise.resolve(true);
 }
