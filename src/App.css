@@ -1,33 +1,61 @@
 :root {
-  --bg: #f4f4f5;
-  --bg-rail: #ececee;
-  --bg-preview: #e4e4e7;
-  --bg-elevated: #ffffff;
-  --fg: #18181b;
-  --fg-muted: #71717a;
-  --border: rgba(24, 24, 27, 0.12);
-  --accent: #396cd8;
-  --accent-hover: #2f5bb8;
-  --danger: #dc2626;
+  /* Brand palette */
+  --floral-white: #fffcf2;
+  --dust-grey: #ccc5b9;
+  --charcoal-brown: #403d39;
+  --carbon-black: #252422;
+  --spicy-paprika: #eb5e28;
+
+  /* Light theme (floral-white surface, carbon type, paprika accent) */
+  --bg: var(--floral-white);
+  --bg-rail: color-mix(in srgb, var(--dust-grey) 35%, var(--floral-white));
+  --bg-preview: color-mix(in srgb, var(--dust-grey) 55%, var(--floral-white));
+  --bg-elevated: color-mix(in srgb, var(--floral-white) 55%, #ffffff);
+  --fg: var(--carbon-black);
+  --fg-muted: var(--charcoal-brown);
+  --border: color-mix(in srgb, var(--carbon-black) 14%, transparent);
+  --accent: var(--spicy-paprika);
+  --accent-hover: color-mix(
+    in srgb,
+    var(--carbon-black) 22%,
+    var(--spicy-paprika)
+  );
+  --accent-fg: var(--floral-white);
+  --danger: #b42318;
   --radius: 8px;
   --rail-width: 300px;
   --titlebar-height: 40px;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  --checkerboard-bg: #fff;
-  --checkerboard-tile: #ccc;
-  --_dark-bg: #18181b;
-  --_dark-bg-rail: #1f1f23;
-  --_dark-bg-preview: #141416;
-  --_dark-bg-elevated: #27272a;
-  --_dark-fg: #fafafa;
-  --_dark-fg-muted: #a1a1aa;
-  --_dark-border: rgba(250, 250, 250, 0.12);
-  --_dark-accent: #5b8def;
-  --_dark-accent-hover: #7aa2f5;
-  --_dark-danger: #f87171;
-  --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --_dark-checkerboard-bg: #2a2a2e;
-  --_dark-checkerboard-tile: #3a3a40;
+  --shadow: 0 8px 32px color-mix(in srgb, var(--carbon-black) 22%, transparent);
+  --checkerboard-bg: var(--floral-white);
+  --checkerboard-tile: var(--dust-grey);
+
+  /* Dark theme (carbon surface, floral type, paprika accent) */
+  --_dark-bg: var(--carbon-black);
+  --_dark-bg-rail: color-mix(
+    in srgb,
+    var(--charcoal-brown) 70%,
+    var(--carbon-black)
+  );
+  --_dark-bg-preview: color-mix(in srgb, #000 30%, var(--carbon-black));
+  --_dark-bg-elevated: var(--charcoal-brown);
+  --_dark-fg: var(--floral-white);
+  --_dark-fg-muted: var(--dust-grey);
+  --_dark-border: color-mix(in srgb, var(--floral-white) 14%, transparent);
+  --_dark-accent: var(--spicy-paprika);
+  --_dark-accent-hover: color-mix(
+    in srgb,
+    var(--floral-white) 22%,
+    var(--spicy-paprika)
+  );
+  --_dark-accent-fg: var(--floral-white);
+  --_dark-danger: #f2a39a;
+  --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --_dark-checkerboard-bg: color-mix(
+    in srgb,
+    var(--charcoal-brown) 50%,
+    var(--carbon-black)
+  );
+  --_dark-checkerboard-tile: var(--charcoal-brown);
   /* Make native <select>/<option> follow light/dark with our theme. */
   color-scheme: light;
 
@@ -57,6 +85,7 @@
     --border: var(--_dark-border);
     --accent: var(--_dark-accent);
     --accent-hover: var(--_dark-accent-hover);
+    --accent-fg: var(--_dark-accent-fg);
     --danger: var(--_dark-danger);
     --shadow: var(--_dark-shadow);
     --checkerboard-bg: var(--_dark-checkerboard-bg);
@@ -76,6 +105,7 @@
   --border: var(--_dark-border);
   --accent: var(--_dark-accent);
   --accent-hover: var(--_dark-accent-hover);
+  --accent-fg: var(--_dark-accent-fg);
   --danger: var(--_dark-danger);
   --shadow: var(--_dark-shadow);
   --checkerboard-bg: var(--_dark-checkerboard-bg);
@@ -129,7 +159,7 @@ button:disabled {
 button.btn-primary {
   background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--accent-fg);
 }
 
 button.btn-primary:hover:not(:disabled) {
@@ -249,7 +279,7 @@ button:focus-visible {
 .app-title {
   margin: 0;
   font-size: 0.95rem;
-  font-weight: 650;
+  font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
   min-width: 0;
@@ -345,6 +375,23 @@ button.titlebar-close:hover:not(:disabled) {
   flex-direction: column;
   gap: 16px;
   padding: 12px 12px 12px;
+}
+
+.app-rail-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+  color: var(--fg);
+  pointer-events: none;
+}
+
+.app-rail-brand svg {
+  display: block;
+  height: 64px;
+  width: auto;
+  max-width: 100%;
 }
 
 .app-rail-footer {
@@ -457,6 +504,10 @@ button.titlebar-close:hover:not(:disabled) {
   .file-block {
     padding: 8px 10px;
   }
+
+  .app-rail-brand svg {
+    height: 48px;
+  }
 }
 
 .mode-option:hover {
@@ -556,7 +607,7 @@ button.mode-option-download:disabled {
 .image-panel-actions button.btn-primary:disabled {
   opacity: 1;
   background: color-mix(in srgb, var(--accent) 45%, var(--bg-elevated));
-  color: color-mix(in srgb, #fff 75%, var(--fg-muted));
+  color: color-mix(in srgb, var(--accent-fg) 75%, var(--fg-muted));
   border-color: transparent;
   cursor: not-allowed;
 }
@@ -783,7 +834,7 @@ button.mode-option-download:disabled {
   height: 28px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 2px solid var(--floral-white);
   background: var(--accent);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
   pointer-events: none;

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import logoSvg from "./assets/logo.svg?raw";
 import { FileBlock } from "./components/FileBlock";
 import { ImagePanel } from "./components/ImagePanel";
+import { InlineSvg } from "./components/InlineSvg";
 import { ModeSelector } from "./components/ModeSelector";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -181,6 +183,13 @@ function App() {
           <aside className="app-rail">
             {/* Scrollable controls; footer stays pinned so Process/Cancel survive short tiles. */}
             <div className="app-rail-scroll">
+              <InlineSvg
+                svg={logoSvg}
+                className="app-rail-brand"
+                role="img"
+                aria-label="yabr"
+              />
+
               <div className="app-rail-section">
                 <FileBlock />
               </div>

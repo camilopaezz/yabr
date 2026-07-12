@@ -14,6 +14,7 @@ import settingsIcon from "../assets/icons/titlebar/settings.svg?raw";
 import squareIcon from "../assets/icons/titlebar/square.svg?raw";
 import xIcon from "../assets/icons/titlebar/x.svg?raw";
 import { epLabel } from "../lib/epLabel";
+import { InlineSvg } from "./InlineSvg";
 
 export type TitleBarProps = {
   ep: string | null;
@@ -29,16 +30,6 @@ async function withWindow(
   } catch (err) {
     console.error("window control failed", err);
   }
-}
-
-function TitleBarIcon({ svg }: { svg: string }) {
-  return (
-    <span
-      className="titlebar-icon-wrap"
-      aria-hidden
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
 }
 
 export function TitleBar({
@@ -116,13 +107,21 @@ export function TitleBar({
           onClick={onOpenSettings}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <TitleBarIcon svg={settingsIcon} />
+          <InlineSvg
+            svg={settingsIcon}
+            className="titlebar-icon-wrap"
+            aria-hidden
+          />
         </button>
         <WindowButton
           label="Minimize"
           onClick={() => void withWindow((win) => win.minimize())}
         >
-          <TitleBarIcon svg={minusIcon} />
+          <InlineSvg
+            svg={minusIcon}
+            className="titlebar-icon-wrap"
+            aria-hidden
+          />
         </WindowButton>
         <WindowButton
           label={maximized ? "Restore" : "Maximize"}
@@ -133,14 +132,18 @@ export function TitleBar({
             })
           }
         >
-          <TitleBarIcon svg={maximized ? copyIcon : squareIcon} />
+          <InlineSvg
+            svg={maximized ? copyIcon : squareIcon}
+            className="titlebar-icon-wrap"
+            aria-hidden
+          />
         </WindowButton>
         <WindowButton
           label="Close"
           className="titlebar-close"
           onClick={() => void withWindow((win) => win.close())}
         >
-          <TitleBarIcon svg={xIcon} />
+          <InlineSvg svg={xIcon} className="titlebar-icon-wrap" aria-hidden />
         </WindowButton>
       </div>
     </header>
