@@ -7,6 +7,12 @@ import {
   resolveMode,
 } from "../lib/models";
 import {
+  NC_LICENSE_MODAL_COPY,
+  needsNcLicenseAck,
+  setNcLicenseAck,
+  shouldShowNcBadge,
+} from "../lib/ncLicense";
+import {
   invokeDownloadModel,
   invokeListModels,
   listenModelDownload,
@@ -24,8 +30,10 @@ export function ModeSelector() {
   const [downloadStage, setDownloadStage] = useState<"download" | "verify">(
     "download",
   );
+  const [ncAckModel, setNcAckModel] = useState<ModelMeta | null>(null);
   const isCancelledRef = useRef(false);
   const downloadPresence = useAnimatedPresence(Boolean(downloading));
+  const ncAckPresence = useAnimatedPresence(Boolean(ncAckModel));
 
   useEffect(() => {
     if (downloading) {
@@ -111,12 +119,32 @@ export function ModeSelector() {
     };
   }, [downloading, setMode]);
 
-  const startDownload = (model: ModelMeta) => {
-    if (downloading || isModelReady(model)) return;
+  const beginDownload = (model: ModelMeta) => {
     isCancelledRef.current = false;
     setDownloadProgress(0);
     setDownloadStage("download");
     setDownloading(model);
+  };
+
+  const startDownload = (model: ModelMeta) => {
+    if (downloading || isModelReady(model)) return;
+    if (needsNcLicenseAck(model)) {
+      setNcAckModel(model);
+      return;
+    }
+    beginDownload(model);
+  };
+
+  const handleNcAckAccept = () => {
+    if (!ncAckModel) return;
+    setNcLicenseAck();
+    const model = ncAckModel;
+    setNcAckModel(null);
+    beginDownload(model);
+  };
+
+  const handleNcAckCancel = () => {
+    setNcAckModel(null);
   };
 
   const handleSelect = (model: ModelMeta) => {
@@ -155,8 +183,15 @@ export function ModeSelector() {
             />
             <span className="mode-option-name">{model.name}</span>
             {available ? (
-              <span className="mode-option-badge mode-option-model">
-                {model.id}
+              <span className="mode-option-badges">
+                {shouldShowNcBadge(model) ? (
+                  <span className="mode-option-badge mode-option-nc">
+                    Non-commercial
+                  </span>
+                ) : null}
+                <span className="mode-option-badge mode-option-model">
+                  {model.id}
+                </span>
               </span>
             ) : (
               <button
@@ -175,6 +210,48 @@ export function ModeSelector() {
           </label>
         );
       })}
+
+      {ncAckPresence.rendered && ncAckModel && (
+        <div
+          className={`nc-license-modal-backdrop${ncAckPresence.open ? " is-open" : ""}`}
+        >
+          <div
+            className={`nc-license-modal-card${ncAckPresence.open ? " is-open" : ""}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nc-license-modal-title"
+          >
+            <h3 id="nc-license-modal-title">{NC_LICENSE_MODAL_COPY.title}</h3>
+            <p className="nc-license-modal-summary">
+              {NC_LICENSE_MODAL_COPY.summary}
+            </p>
+            <p className="nc-license-modal-hint">
+              {NC_LICENSE_MODAL_COPY.commercialHint}
+            </p>
+            <p className="nc-license-modal-license">
+              <a
+                href={NC_LICENSE_MODAL_COPY.licenseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {NC_LICENSE_MODAL_COPY.licenseLabel}
+              </a>
+            </p>
+            <div className="nc-license-modal-actions">
+              <button type="button" onClick={handleNcAckCancel}>
+                {NC_LICENSE_MODAL_COPY.cancelLabel}
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleNcAckAccept}
+              >
+                {NC_LICENSE_MODAL_COPY.acceptLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {downloadPresence.rendered && displayModel && (
         <div

@@ -39,6 +39,7 @@ test.describe("SwiftMask", () => {
 
     await page.addInitScript(
       ({ config, fixtureArray }) => {
+        localStorage.removeItem("swiftmask:nc-license-ack");
         window.__SWIFTMASK_MOCK__ = {
           config,
           listeners: {},
@@ -103,5 +104,39 @@ test.describe("SwiftMask", () => {
     }));
     expect(size.width).toBeGreaterThan(0);
     expect(size.height).toBeGreaterThan(0);
+  });
+
+  test("NC license modal gates first RMBG download", async ({ page }) => {
+    await page.goto("/");
+
+    const balancedPlusRow = page
+      .locator(".mode-option")
+      .filter({ hasText: "Balanced+" });
+    await balancedPlusRow.getByRole("button", { name: "Download" }).click();
+
+    const ncDialog = page.getByRole("dialog", {
+      name: "Non-commercial license",
+    });
+    await expect(ncDialog).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Downloading Balanced+" }),
+    ).toHaveCount(0);
+
+    await ncDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(ncDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Downloading Balanced+" }),
+    ).toHaveCount(0);
+
+    await balancedPlusRow.getByRole("button", { name: "Download" }).click();
+    await expect(ncDialog).toBeVisible();
+
+    await ncDialog
+      .getByRole("button", { name: "I understand — download" })
+      .click();
+    await expect(ncDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Downloading Balanced+" }),
+    ).toBeVisible();
   });
 });
