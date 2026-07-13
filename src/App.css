@@ -29,6 +29,13 @@
   --checkerboard-bg: var(--floral-white);
   --checkerboard-tile: var(--dust-grey);
 
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 220ms;
+  --duration-slow: 320ms;
+
   /* Dark theme (carbon surface, floral type, paprika accent) */
   --_dark-bg: var(--carbon-black);
   --_dark-bg-rail: color-mix(
@@ -483,6 +490,23 @@ button.titlebar-close:hover:not(:disabled) {
   background: var(--bg-elevated);
   cursor: pointer;
   opacity: 0.95;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.mode-option.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  opacity: 1;
+}
+
+.mode-option:active:not(:has(input:disabled)) {
+  transform: scale(0.985);
 }
 
 /* Tiling / short windows: keep mode list denser so scroll area stays usable. */
@@ -526,6 +550,14 @@ button.titlebar-close:hover:not(:disabled) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.mode-option.is-selected .mode-option-model {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .mode-option-model {
@@ -548,6 +580,14 @@ button.mode-option-download {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+button.mode-option-download:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 button.mode-option-download:hover {
@@ -877,6 +917,14 @@ body.is-slider-dragging * {
   justify-content: center;
   z-index: 200;
   padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.modal-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .modal-card {
@@ -889,6 +937,16 @@ body.is-slider-dragging * {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   color: var(--fg);
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.modal-card.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .modal-header {
@@ -978,6 +1036,14 @@ body.is-slider-dragging * {
   justify-content: center;
   z-index: 250;
   padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.download-modal-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .download-modal-card {
@@ -988,6 +1054,16 @@ body.is-slider-dragging * {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   color: var(--fg);
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.download-modal-card.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .download-modal-card h3 {
@@ -1005,4 +1081,25 @@ body.is-slider-dragging * {
 .download-modal-card button {
   margin-top: 16px;
   width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-card,
+  .download-modal-backdrop,
+  .download-modal-card,
+  .mode-option,
+  .mode-option-badge,
+  button.mode-option-download {
+    animation: none;
+    transition: none;
+  }
+
+  .modal-backdrop,
+  .modal-card,
+  .download-modal-backdrop,
+  .download-modal-card {
+    opacity: 1;
+    transform: none;
+  }
 }

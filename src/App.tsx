@@ -24,17 +24,19 @@ import {
   invokeRunBenchmark,
 } from "./lib/tauri";
 import { applyTheme, persistTheme } from "./lib/theme";
+import { useAnimatedPresence } from "./lib/useAnimatedPresence";
+import { useTauriFileDrop } from "./lib/useTauriFileDrop";
 import {
   onWindowDragDoubleClick,
   onWindowDragMouseDown,
 } from "./lib/windowControls";
-import { useTauriFileDrop } from "./lib/useTauriFileDrop";
 import { useImageStore } from "./stores/imageStore";
 import { settingsStore, useSettingsStore } from "./stores/settingsStore";
 import "./App.css";
 
 function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const settingsPresence = useAnimatedPresence(settingsVisible);
   const [ready, setReady] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -143,19 +145,28 @@ function App() {
     persistTheme(theme);
   }, [theme]);
 
+  const settingsWasOpenRef = useRef(settingsPresence.open);
+
   useEffect(() => {
-    if (!settingsVisible) return;
+    const wasOpen = settingsWasOpenRef.current;
+    settingsWasOpenRef.current = settingsPresence.open;
+
+    if (!settingsPresence.open) {
+      if (wasOpen) {
+        settingsButtonRef.current?.focus();
+      }
+      return;
+    }
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setSettingsVisible(false);
     };
     window.addEventListener("keydown", onKey);
-    // Focus close control when the modal opens; restore Settings button on close.
     settingsCloseRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
-      settingsButtonRef.current?.focus();
     };
-  }, [settingsVisible]);
+  }, [settingsPresence.open]);
 
   // Frameless window: always mount TitleBar so drag/close work during first-run
   // and cold-start. Blocker overlays content only (CSS leaves titlebar free).
@@ -208,11 +219,7 @@ function App() {
               onMouseDown={onWindowDragMouseDown}
               onDoubleClick={onWindowDragDoubleClick}
             >
-              <InlineSvg
-                svg={appLogoSvg}
-                role="img"
-                aria-label="SwiftMask"
-              />
+              <InlineSvg svg={appLogoSvg} role="img" aria-label="SwiftMask" />
             </div>
 
             {/* Scrollable controls; footer stays pinned so Process/Cancel survive short tiles. */}
@@ -240,16 +247,16 @@ function App() {
             />
           </section>
 
-          {settingsVisible && (
+          {settingsPresence.rendered && (
             <div
-              className="modal-backdrop"
+              className={`modal-backdrop${settingsPresence.open ? " is-open" : ""}`}
               role="presentation"
               onClick={(e) => {
                 if (e.target === e.currentTarget) setSettingsVisible(false);
               }}
             >
               <div
-                className="modal-card"
+                className={`modal-card${settingsPresence.open ? " is-open" : ""}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="settings-title"
@@ -266,7 +273,7 @@ function App() {
                     ✕
                   </button>
                 </div>
-                <SettingsPanel visible={settingsVisible} />
+                <SettingsPanel visible={settingsPresence.open} />
               </div>
             </div>
           )}

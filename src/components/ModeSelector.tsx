@@ -11,6 +11,7 @@ import {
   invokeListModels,
   listenModelDownload,
 } from "../lib/tauri";
+import { useAnimatedPresence } from "../lib/useAnimatedPresence";
 import { settingsStore, useSettingsStore } from "../stores/settingsStore";
 
 export function ModeSelector() {
@@ -18,11 +19,25 @@ export function ModeSelector() {
   const setMode = useSettingsStore((state) => state.setMode);
   const [models, setModels] = useState<ModelMeta[]>([]);
   const [downloading, setDownloading] = useState<ModelMeta | null>(null);
+  const [displayModel, setDisplayModel] = useState<ModelMeta | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadStage, setDownloadStage] = useState<"download" | "verify">(
     "download",
   );
   const isCancelledRef = useRef(false);
+  const downloadPresence = useAnimatedPresence(Boolean(downloading));
+
+  useEffect(() => {
+    if (downloading) {
+      setDisplayModel(downloading);
+    }
+  }, [downloading]);
+
+  useEffect(() => {
+    if (!downloadPresence.rendered) {
+      setDisplayModel(null);
+    }
+  }, [downloadPresence.rendered]);
 
   const applyModels = (list: ModelMeta[]) => {
     setModels(list);
@@ -128,7 +143,7 @@ export function ModeSelector() {
         return (
           <label
             key={model.id}
-            className="mode-option"
+            className={`mode-option${mode === model.id ? " is-selected" : ""}`}
             title={`${model.name} (${model.id}) — ${model.input_size}px`}
           >
             <input
@@ -161,13 +176,17 @@ export function ModeSelector() {
         );
       })}
 
-      {downloading && (
-        <div className="download-modal-backdrop">
-          <div className="download-modal-card">
+      {downloadPresence.rendered && displayModel && (
+        <div
+          className={`download-modal-backdrop${downloadPresence.open ? " is-open" : ""}`}
+        >
+          <div
+            className={`download-modal-card${downloadPresence.open ? " is-open" : ""}`}
+          >
             <h3>
               {downloadStage === "verify"
-                ? `Verifying ${downloading.name}`
-                : `Downloading ${downloading.name}`}
+                ? `Verifying ${displayModel.name}`
+                : `Downloading ${displayModel.name}`}
             </h3>
             <div className="progress-bar-track">
               <div

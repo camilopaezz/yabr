@@ -38,11 +38,16 @@ async function loadImageUrl(path: string | null): Promise<string | null> {
 function useObjectUrl(path: string | null): string | null {
   const [url, setUrl] = useState<string | null>(null);
   const displayedRef = useRef<string | null>(null);
+  const revokeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     if (!path) {
+      if (revokeTimerRef.current != null) {
+        window.clearTimeout(revokeTimerRef.current);
+        revokeTimerRef.current = null;
+      }
       if (displayedRef.current) {
         URL.revokeObjectURL(displayedRef.current);
         displayedRef.current = null;
@@ -60,7 +65,16 @@ function useObjectUrl(path: string | null): string | null {
         const prev = displayedRef.current;
         displayedRef.current = next;
         setUrl(next);
-        if (prev && prev !== next) URL.revokeObjectURL(prev);
+        if (prev && prev !== next) {
+          if (revokeTimerRef.current != null) {
+            window.clearTimeout(revokeTimerRef.current);
+          }
+          const stale = prev;
+          revokeTimerRef.current = window.setTimeout(() => {
+            URL.revokeObjectURL(stale);
+            revokeTimerRef.current = null;
+          }, 1000);
+        }
       })
       .catch(() => {
         // Keep previous image if reload fails.
@@ -68,6 +82,10 @@ function useObjectUrl(path: string | null): string | null {
 
     return () => {
       cancelled = true;
+      if (revokeTimerRef.current != null) {
+        window.clearTimeout(revokeTimerRef.current);
+        revokeTimerRef.current = null;
+      }
     };
   }, [path]);
 
@@ -108,6 +126,9 @@ function useImageAspectRatio(url: string | null): number | null {
 
     return () => {
       cancelled = true;
+      img.onload = null;
+      img.onerror = null;
+      img.src = "";
     };
   }, [url]);
 
@@ -127,7 +148,6 @@ function CompareSlider({
 }: CompareSliderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(50);
-  // Keep drag state in a ref so pointermove does not re-bind listeners.
   const draggingRef = useRef(false);
   const positionRef = useRef(50);
 
@@ -171,7 +191,6 @@ function CompareSlider({
   }, [updateFromClientX]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
-    // Prevent native image/text selection while scrubbing.
     e.preventDefault();
     e.stopPropagation();
     draggingRef.current = true;
@@ -184,7 +203,6 @@ function CompareSlider({
     updateFromClientX(e.clientX);
   };
 
-  // clip-path reveals left `position`% of the before image — no pixel measure / resize thrash.
   const beforeClip = `inset(0 ${100 - position}% 0 0)`;
 
   return (
@@ -244,7 +262,6 @@ export function PreviewCanvas({
     canCompare && inputPath && outputPath && inputUrl && outputUrl,
   );
 
-  // Prefer output AR for compare (same pixel size as processed frame); fall back to input.
   const inputAr = useImageAspectRatio(inputUrl);
   const outputAr = useImageAspectRatio(showCompare ? outputUrl : null);
   const aspectRatio = (showCompare ? outputAr : null) ?? inputAr;
@@ -279,7 +296,6 @@ export function PreviewCanvas({
             <img src={inputUrl} alt="Input" draggable={false} />
           </div>
         ) : inputUrl ? (
-          // Aspect ratio still loading — show image with fallback sizing.
           <div className="preview-image-frame preview-image-frame-fallback">
             <img src={inputUrl} alt="Input" draggable={false} />
           </div>

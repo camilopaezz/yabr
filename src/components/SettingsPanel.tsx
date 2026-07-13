@@ -87,10 +87,8 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
     }
   };
 
-  if (!visible) return null;
-
   return (
-    <div className="settings-panel">
+    <div className="settings-panel" aria-hidden={!visible} inert={!visible}>
       <div className="settings-field">
         <label htmlFor="settings-theme">Theme</label>
         <select
