@@ -1,12 +1,10 @@
 name: CI
 
-# Full CI gate for production: runs only on main (push + PRs targeting main).
+# Full CI gate for production: runs on PRs targeting main only.
 # Feature → dev PRs intentionally skip CI; validate locally before merging to dev.
 # Release builds and publishing happen in release.yml (tag push after dev → main).
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
