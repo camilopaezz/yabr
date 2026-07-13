@@ -6,7 +6,7 @@ How we branch, integrate, and release SwiftMask.
 
 | Branch | Role |
 |--------|------|
-| `main` | Production. Tagged releases only. Full CI on every push/PR. |
+| `main` | Production. Tagged releases only. Full CI on PRs targeting `main` (not on ordinary pushes). |
 | `dev` | Integration. Feature PRs merge here. **No CI** — you validate locally. |
 | `feature/*` | Short-lived work branches. Cut from `dev`, PR back to `dev`. |
 
@@ -35,8 +35,8 @@ Repeat until `dev` has enough for a release.
 1. On `dev`, prepare a release PR into `main`:
    - Bump version in **all three** files: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`
    - Move `[Unreleased]` items in `CHANGELOG.md` under a new `## [X.Y.Z] - YYYY-MM-DD` section
-2. Open **PR `dev` → `main`**. **Full CI runs** (lint, tests, Rust, Tauri bundles, mocked E2E).
-3. Merge when green and reviewed.
+2. Open **PR `dev` → `main`**. **Full CI runs** (lint, unit tests, `gen:models:check`, Rust tests, Tauri bundles on Linux + Windows, mocked Playwright E2E).
+3. Merge when green and reviewed. Merging does not re-run CI — the PR run is the gate.
 4. Tag on `main` (version must match the bump):
    ```bash
    git checkout main && git pull
@@ -54,7 +54,9 @@ To re-run a failed publish without retagging, use **Actions → Release → Run 
 | PR → `dev` | — | Nothing (manual QA) |
 | Push to `dev` | — | Nothing |
 | PR → `main` | `ci.yml` | Lint, unit tests, `gen:models:check`, `cargo test`, Tauri build (Linux + Windows), mocked Playwright E2E |
-| Push tag `v*` on `main` | `release.yml` | Version check, full test + build, GitHub Release upload |
+| Push to `main` | — | Nothing (CI already ran on the PR) |
+| Push semver tag `vX.Y.Z` (optional `-prerelease`) on `main` | `release.yml` | Version check, full test + build, GitHub Release upload |
+| Manual dispatch with existing tag | `release.yml` | Re-publish a failed release without retagging |
 
 ## First-time setup
 
