@@ -10,15 +10,15 @@ Dominio / decisiones: `docs/plan.md` (A1–A19). No hay `CONTEXT.md` todavía.
 ## Orden recomendado (stack)
 
 ```
-PR1  Deepen job de remoción (Rust)          ← Strong, base  [GRILLING CERRADO]
+PR1  Deepen job de remoción (Rust)          ← Strong, base  [HECHO]
   │
   ├─ PR1b  Export PNG+alpha ⊂ PR1 (acordado)
   │
-PR2  Ciclo de vida CurrentImage (frontend)  ← Strong  [GRILLING CERRADO]
+PR2  Ciclo de vida CurrentImage (frontend)  ← Strong  [HECHO]
   │
 PR3  Contrato IPC unificado                 ← Worth exploring; desbloquea e2e honestos
   │
-PR4  Seam único del registry de modelos     ← Worth exploring  [IMPLEMENTADO]
+PR4  Seam único del registry de modelos     ← Worth exploring  [HECHO]
   │
 PR5  Política EP + Config                   ← Worth exploring; toca first-run y Settings
 ```
@@ -38,13 +38,15 @@ PR5  Política EP + Config                   ← Worth exploring; toca first-run
 | Área | Hecho hoy | Gap |
 |------|-----------|-----|
 | Pipeline (`pipeline.rs`) | Unit tests preprocess/postprocess | OK |
-| Image I/O | Round-trip PNG/JPEG/WebP/BMP | `apply_alpha` muerto; loop duplicado en `encode_png_rgba` |
-| Job (`processing.rs`) | Solo test del `AtomicBool` cancel | `run_one` no testeable sin `AppHandle` |
-| Commands | `spawn_blocking` + `catch_unwind` + emit error | Shell grueso mezclado con política de errores |
-| Frontend process | `ImagePanel` + `progressStore` + `path` ×3 | overwrite A18 no cableado |
-| Models | Rust SoT + `list_models` | `src/lib/models.ts` SHA placeholder |
-| EP | `cpu`/`cuda`/`directml` en prod | e2e usa `CPUExecutionProvider` etc. |
-| E2E | Playwright + aliases Vite, no desktop real | Mocks desalineados |
+| Image I/O | Round-trip PNG/JPEG/WebP/BMP; `apply_alpha` eliminado | OK |
+| Job (`job.rs`) | `ProcessingJob` + `JobDeps` + 5 tests sin `AppHandle` | OK (PR1 hecho) |
+| Processing (`processing.rs`) | `ProcessingState` cancel token | OK |
+| Commands | Adapter Tauri: `spawn_blocking` + `catch_unwind` → `job::run` | Panic path only en adapter |
+| Frontend process | `currentImage.ts` + `imageStore`; overwrite A18 cableado | OK (PR2 hecho) |
+| Models | Rust SoT + `gen_model_registry` → `models.generated.ts` | OK (PR4 hecho) |
+| EP | `cpu`/`cuda`/`directml` en prod y mocks e2e (lowercase) | Sin mapper IPC unificado (PR3) |
+| E2E | Playwright + mocks en `e2e/mocks/`, SHA reales del generado | No desktop real; mocked E2E en cada PR a `main` |
+| UI shell | `TitleBar` frameless, rail + preview, `FileBlock` | — |
 
 **Comandos de verificación**
 
@@ -183,7 +185,7 @@ Concentrar política de la imagen actual: accept drop, path, start process (**ov
 |---------|--------|
 | `src/lib/currentImage.ts` | **Nuevo** — dominio |
 | `src/lib/currentImage.test.ts` | **Nuevo** |
-| `src/components/FileDropZone.tsx` | Solo UI + acceptDrop/sync |
+| `src/components/FileBlock.tsx` | Solo UI + acceptDrop/sync (reemplaza FileDropZone planificado) |
 | `src/components/ImagePanel.tsx` | Solo UI + startProcess/cancel/clear |
 | `src/App.tsx` | init listeners desde currentImage |
 | `src/stores/progressStore.ts` | **Borrar** |
@@ -216,8 +218,8 @@ Un contract: eventos, job shape, EP strings. Adapters: prod Tauri + e2e mock.
 
 ### Criterios de done
 
-- [ ] Mismos strings EP en e2e y prod
-- [ ] Un sitio TS traduce eventos → estado
+- [x] Mismos strings EP en e2e y prod (`cpu`/`cuda`/`directml` en mocks y backend)
+- [ ] Un sitio TS traduce eventos → estado (hoy repartido en `currentImage.ts` + `tauri.ts`)
 
 ---
 
@@ -289,6 +291,7 @@ PR4 (registry) ── independiente
 4. Un PR del stack a la vez.
 5. Al cerrar PR: marcar criterios de done.
 6. Rechazo con razón de carga → ofrecer ADR en `docs/adr/`.
+7. **PR1, PR2, PR4 cerrados.** Siguiente foco recomendado: **PR3** (IPC) o **PR5** (EpPolicy).
 
 ---
 
@@ -305,4 +308,4 @@ PR4 (registry) ── independiente
 
 ---
 
-*Última actualización: 2026-07-09 · PR1+PR2 hechos · grilling PR4 cerrado · siguiente: implementar PR4.*
+*Última actualización: 2026-07-12 · PR1+PR2+PR4 hechos · siguiente: PR3 (IPC) o PR5 (EpPolicy).*

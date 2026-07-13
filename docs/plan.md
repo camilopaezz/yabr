@@ -3,8 +3,9 @@
 A cross-platform, local-first, GPU-accelerated background removal application.
 Open source (MIT), no telemetry, no cloud. All inference runs on the user's hardware.
 
-> Status: Planning phase. All architectural decisions (A1–A19) are locked for the
-> MVP. Decisions can be revisited by editing this document.
+> Status: **MVP implemented** (v0.1.0). Architectural decisions A1–A19 remain the
+> product baseline; this document is kept in sync with the repo. Revisit decisions
+> by editing this file.
 
 ---
 
@@ -31,7 +32,7 @@ Each row is a decision resolved during grilling. Rationale is one line.
 | A15 | Image pipeline | **`image` + `imageproc` crates** | Proven by reference projects; sufficient for MVP. |
 | A16 | Updates & telemetry | **Tauri updater (signed) + zero telemetry** | Local-first privacy promise; logs local only. |
 | A17 | Bundled benchmark model | **Embed `u2netp` via `include_bytes!`** | 4.7 MB negligible; offline first-run benchmark + offline Turbo. |
-| A18 | Output filename | **`<stem>-nobg.png` next to input + overwrite prompt** | Predictable, keeps inputs untouched, matches user expectation. |
+| A18 | Output filename | **`<stem>-nobg-<modelId>.png` next to input (or chosen output dir) + overwrite prompt** | Predictable, disambiguates re-runs across modes, keeps inputs untouched. |
 | A19 | Theme | **Follow system theme via `prefers-color-scheme`** | Modern expectation; minimal extra work for MVP. |
 
 ---
@@ -46,25 +47,28 @@ Versions verified as of July 2026.
 - `ort` `2.0.0-rc.12` — ONNX Runtime binding, wraps ONNX Runtime `1.24`; EPs via Cargo features (`directml`, `cuda`, `coreml`). Uses `download-binaries` feature to fetch the right prebuilt `onnxruntime` shared lib per platform at build time.
 - `image` `0.25.10` — decode (JPG/PNG/WEBP/BMP)/resize/encode
 - `imageproc` `0.27.0` — mask operations (if needed)
-- `ndarray` `0.16` — tensor ops for preprocessing
+- `ndarray` `0.17` — tensor ops for preprocessing
 - `reqwest` (rustls) — model downloads from HuggingFace CDN
-- `tauri-plugin-updater` — signed auto-updates from GitHub Releases
+- `tauri-plugin-updater` — planned (A16); not wired in `Cargo.toml` yet
 - `tauri-plugin-fs`, `tauri-plugin-dialog` — native file pickers
 - `thiserror`, `serde`, `serde_json` — errors and config
 
 **Frontend**
 - React `19.2.7` + TypeScript
-- Vite `6` (via `create-tauri-app` template)
+- Vite `7`
 - Zustand `5` — state
+- Biome — lint + format
+- Bun — package manager (`bun.lock` canonical)
 - `@tauri-apps/api` `2.x` — `invoke`, `listen`
 - File drag-drop: **Tauri native drag-drop events** (`tauri://drag-drop`, `tauri://drag-over`, `tauri://drag-leave`). A thin custom `useTauriFileDrop()` hook (~30 lines) wraps `listen()`. No JS library — Tauri intercepts OS file drops and the HTML5 `drop` event does not fire for files in its webview (issues tauri#2768, #5555), so React dropzone libraries (`react-dropzone`, `@input-kit/dropzone`, `react-upload-kit`, etc.) don't work out-of-the-box. Native events give us file **paths** directly, which Rust reads via `std::fs` — no image bytes cross the IPC boundary. Reference projects (`rust_rmbg`, `logo-studio`) use this pattern.
 - Preview canvas: native `<canvas>` (no heavy image lib)
 
 **Build / CI**
-- `cargo-tauri` for builds
-- GitHub Actions matrix: `windows-latest` (x64), `ubuntu-22.04` (x64)
-- `cargo test` + `vitest` on every PR
-- Playwright/WebDriver E2E on the desktop build (nightly)
+- `cargo-tauri` / `bun run tauri build` for release bundles
+- GitHub Actions (`.github/workflows/ci.yml`): Biome lint, `gen:models:check`, Vitest,
+  `cargo test`, Tauri release build on `ubuntu-24.04` (AppImage) + `windows-latest` (NSIS)
+- Installers uploaded as CI artifacts (14-day retention); no GitHub Releases workflow yet
+- Playwright E2E (mocked Tauri APIs) — runs on every push/PR to `main` after lint
 
 ---
 
@@ -74,50 +78,68 @@ Single-crate layout (decision A10):
 
 ```
 SwiftMask/
-├── .agents/
-│   └── plan.md                 # this file
+├── docs/
+│   ├── plan.md                 # this file
+│   ├── architecture-pr-plan.md # deepening stack (job, CurrentImage, IPC, …)
+│   └── production-readiness.md
 ├── src-tauri/
 │   ├── Cargo.toml
-│   ├── tauri.conf.json
+│   ├── tauri.conf.json         # frameless window (decorations: false)
 │   ├── build.rs
 │   ├── icons/
 │   ├── capabilities/
+│   ├── models/                 # bundled u2netp.onnx
+│   ├── tests/
+│   │   ├── fixtures/           # sample.png + sample_mask.png (IoU smoke)
+│   │   └── smoke_inference.rs
 │   └── src/
-│       ├── main.rs             # entry, tauri::Builder, plugin registration
-│       ├── lib.rs              # re-exports
+│       ├── main.rs             # entry
+│       ├── lib.rs              # plugin registration, command handler
 │       ├── commands.rs         # #[tauri::command] surface (see §8)
+│       ├── job.rs              # ProcessingJob orchestration (testable, no AppHandle)
+│       ├── processing.rs       # ProcessingState (cancel token)
 │       ├── inference.rs        # ort session mgmt, EP selection, run()
-│       ├── models.rs           # model registry, metadata, download/cache
+│       ├── models.rs           # model registry SoT, download/cache
+│       ├── bin/gen_model_registry.rs  # codegen → models.generated.ts
 │       ├── gpu.rs              # GPU detection + first-run benchmark
 │       ├── image_io.rs         # decode/resize/encode (wraps `image`)
-│       ├── pipeline.rs         # preprocess + postprocess + apply alpha
+│       ├── pipeline.rs         # preprocess + postprocess
 │       ├── events.rs           # event name constants, payload types
-│       ├── config.rs           # app config (chosen EP, model, paths) in appData
+│       ├── config.rs           # app config (EP, output dir) in appData
 │       └── error.rs            # AppError, thiserror
 ├── src/                        # React frontend
 │   ├── main.tsx
-│   ├── App.tsx
+│   ├── App.tsx                 # shell: rail + preview + settings modal
+│   ├── App.css
+│   ├── assets/                 # logo, titlebar icons
 │   ├── components/
-│   │   ├── FileDropZone.tsx     # uses useTauriFileDrop() hook
-│   │   ├── ImagePanel.tsx
-│   │   ├── PreviewCanvas.tsx
-│   │   ├── ModeSelector.tsx
+│   │   ├── TitleBar.tsx        # custom window controls + EP chip
+│   │   ├── FileBlock.tsx       # open file + current path display
+│   │   ├── ImagePanel.tsx      # Process / Cancel / clear actions
+│   │   ├── PreviewCanvas.tsx   # before/after compare slider
+│   │   ├── ModeSelector.tsx    # quality modes + download UI
 │   │   ├── ProgressBar.tsx
-│   │   └── SettingsPanel.tsx
+│   │   ├── SettingsPanel.tsx
+│   │   └── InlineSvg.tsx
 │   ├── stores/
 │   │   ├── imageStore.ts       # Zustand: current image + status
-│   │   ├── settingsStore.ts    # Zustand: mode, EP, output dir
-│   │   └── progressStore.ts    # Zustand: live progress events
-│   ├── lib/
-│   │   ├── tauri.ts            # invoke/listen wrappers
-│   │   ├── useTauriFileDrop.ts # hook wrapping listen('tauri://drag-drop')
-│   │   └── models.ts           # mode→model metadata mirror of Rust registry
-│   └── styles/
-├── tests/
-│   └── fixtures/               # sample images + expected masks (for IoU tests)
+│   │   └── settingsStore.ts    # Zustand: mode, EP, output dir, theme
+│   └── lib/
+│       ├── currentImage.ts     # drop, path, process, event listeners (domain)
+│       ├── tauri.ts            # invoke/listen wrappers
+│       ├── useTauriFileDrop.ts # hook wrapping listen('tauri://drag-drop')
+│       ├── models.generated.ts # generated from Rust (do not edit)
+│       ├── models.ts           # thin types + resolveMode helpers
+│       ├── path.ts             # deriveOutputPath
+│       ├── overwrite.ts        # overwrite prompt policy
+│       ├── theme.ts            # light/dark/system (localStorage)
+│       └── epLabel.ts          # EP id → chip label
 ├── e2e/
-│   └── playwright.spec.ts
+│   ├── playwright.spec.ts
+│   ├── mocks/                  # swapped @tauri-apps/* for VITE_E2E=1
+│   └── fixtures/sample.png
 ├── package.json
+├── biome.json
 ├── vite.config.ts
 ├── tsconfig.json
 └── README.md
@@ -127,7 +149,9 @@ SwiftMask/
 
 ## 4. Model Registry
 
-Mirrored in `src-tauri/src/models.rs` (source of truth) and `src/lib/models.ts` (UI metadata).
+Defined in `src-tauri/src/models.rs` (source of truth). Static metadata is codegen'd to
+`src/lib/models.generated.ts` via `bun run gen:models`; `src/lib/models.ts` adds runtime
+helpers. Download state (`downloaded`) comes only from `list_models` at runtime.
 
 | Mode (UI) | Model | File | Size | Input | License | Source |
 |---|---|---|---|---|---|---|
@@ -231,10 +255,11 @@ bytes ──image_io::decode──▶ DynamicImage
    bytes (PNG) ──▶ written to output dir
 ```
 
-**Single image** = one `{id, input_path, output_path}` processed inline via
-`spawn_blocking` on `remove_image_background`. Progress is emitted as
-`inference:progress` events. A `cancel` `AtomicBool` (`ProcessingState`) lets the
-user abort the in-flight run via `cancel_inference`.
+**Single image** = one `{id, input_path, output_path, model_id}` orchestrated by
+`job::run` (called from `commands::remove_image_background` via `spawn_blocking`).
+Progress is emitted as `inference:progress` events through a sink adapter. A
+`cancel` `AtomicBool` (`ProcessingState`) lets the user abort the in-flight run via
+`cancel_inference`.
 
 ---
 
@@ -252,6 +277,7 @@ user abort the in-flight run via `cancel_inference`.
 | `remove_image_background` | `{ id, input_path, output_path, model_id }` | `()` | emits `inference:progress` |
 | `cancel_inference` | — | `()` | sets the in-flight cancel token |
 | `pick_output_dir` | — | `Option<String>` | wraps dialog plugin |
+| `get_runtime_info` | — | `RuntimeInfo` | app + ORT versions (Settings) |
 | `get_config` / `set_config` | — | `Config` | persist settings |
 
 **Events** (`events.rs`):
@@ -268,14 +294,22 @@ user abort the in-flight run via `cancel_inference`.
 ## 9. Frontend (React) Shape
 
 **Stores (Zustand):**
-- `imageStore`: `current: ImageItem | null` where `ImageItem = { id, inputPath, outputPath, status: 'queued'|'processing'|'done'|'error'|'cancelled', progress: number }`. Dropping a new image replaces `current`.
-- `settingsStore`: `mode`, `outputDir`, `ep`, `theme`.
-- `progressStore`: subscribes to Tauri events and patches `imageStore` when the payload `id` matches the current image.
+- `imageStore`: `current: ImageItem | null` where `ImageItem = { id, inputPath, outputPath, status: 'ready'|'processing'|'done'|'error'|'cancelled', progress: number }`. Dropping a new image replaces `current`.
+- `settingsStore`: `mode`, `outputDir`, `ep`, `theme`, `gpuInfo`, `benchmarkResult`, `runtimeInfo`.
 
-**Key components:** `FileDropZone` (uses `useTauriFileDrop()` → sets the current image on drop), `ImagePanel`
-(renders the current image with status/progress + Process/Cancel/Remove), `PreviewCanvas`
-(toggles original/transparent on click), `ModeSelector` (Turbo/Balanced/Balanced+/Max),
-`SettingsPanel` (EP override, output dir, re-run benchmark).
+**Domain module (`src/lib/currentImage.ts`):** owns drop acceptance, output path sync,
+`startProcess` (including overwrite A18), Tauri event listeners, and cancel/clear.
+Components are thin views over stores + domain calls.
+
+**Shell layout:** frameless `TitleBar` (minimize/maximize/close, settings, EP chip),
+left `app-rail` (logo, `FileBlock`, `ModeSelector`, `ImagePanel` footer), right
+`PreviewCanvas` (compare slider). Drag-drop is wired in `App.tsx` via `useTauriFileDrop`
+→ `acceptDrop`. Theme follows `theme.ts` (system/light/dark, persisted in localStorage).
+
+**Key components:** `FileBlock` (open picker + path display), `ImagePanel`
+(Process/Cancel/clear), `PreviewCanvas` (before/after slider), `ModeSelector`
+(Turbo/Balanced/Balanced+/Max + download), `SettingsPanel` (EP override, output dir,
+re-benchmark, theme, runtime info).
 
 ---
 
@@ -283,15 +317,18 @@ user abort the in-flight run via `cancel_inference`.
 
 - **Rust unit tests** (`#[test]` in each module):
   - `pipeline.rs`: preprocessing tensor shapes & normalization values per model.
-  - `image_io.rs`: round-trip decode/encode for JPG/PNG/WEBP.
-  - `models.rs`: registry integrity, SHA-256 verification of a dummy download.
-- **Inference smoke test** (`tests/smoke_inference.rs`): load `u2netp`, run on
-  `tests/fixtures/sample.png`, assert output PNG has an alpha channel and that the
-  mask IoU vs `tests/fixtures/sample_mask.png` ≥ 0.85.
-- **Frontend**: Vitest on `imageStore` reducers and `progressStore` event handlers
-  (mock `listen`).
-- **E2E**: Playwright over the Tauri WebDriver target — drop a fixture image, wait for
-  `inference:done`, assert output file exists in a temp dir. Nightly in CI.
+  - `image_io.rs`: round-trip decode/encode for JPG/PNG/WEBP/BMP.
+  - `job.rs`: happy path (real u2netp + CPU), cancel, missing model, missing input.
+  - `processing.rs`: cancel token set/reset.
+- **Inference smoke test** (`src-tauri/tests/smoke_inference.rs`): load `u2netp`, run on
+  `tests/fixtures/sample.png`, assert output PNG has an alpha channel and mask IoU vs
+  `tests/fixtures/sample_mask.png` ≥ 0.85. Run via `cargo test` in CI.
+- **Frontend (Vitest):** `currentImage.test.ts` (process flow, events, overwrite),
+  `path.test.ts`, `overwrite.test.ts`, `imageStore.test.ts`, `models.test.ts`,
+  `theme.test.ts`, `epLabel.test.ts`.
+- **E2E (Playwright):** mocked `@tauri-apps/*` under `VITE_E2E=1` — main flow smoke in
+  `e2e/playwright.spec.ts`. Real Tauri WebDriver E2E (`e2e/tauri-webdriver.config.ts`)
+  is stubbed; not run in CI. Mocked Playwright E2E runs in CI on every PR to `main`.
 
 ---
 
@@ -304,71 +341,46 @@ user abort the in-flight run via `cancel_inference`.
 - **Update channel:** GitHub Releases. `tauri-plugin-updater` checks on launch.
 - **Installer size:** ~30 MB (Tauri runtime + React bundle + bundled `u2netp`).
   Other models are downloaded on demand.
-- **CI matrix:** `windows-latest`, `ubuntu-22.04`. Linux build needs `libonnxruntime.so`
-  rpath fix (`src-tauri/.cargo/config.toml` with `link-arg=-Wl,-rpath,$ORIGIN`) to avoid
-  the known Tauri AppImage linking issue (tauri#4724).
+- **CI matrix:** `windows-latest`, `ubuntu-24.04`. Linux build still needs an AppImage
+  `libonnxruntime.so` rpath fix (`src-tauri/.cargo/config.toml` with
+  `link-arg=-Wl,-rpath,$ORIGIN`) — not in the repo yet (tauri#4724).
 
 ---
 
 ## 12. Roadmap / Phases
 
-**Phase 0 — Scaffold** (no inference yet)
-- `create-tauri-app` with React+TS+Vite template.
-- Single-crate Rust layout, modules stubbed.
-- CI: build green on Windows + Linux.
-- Deliverable: empty shell launches on both platforms.
+**Phase 0 — Scaffold** ✅
+- Tauri 2 + React+TS+Vite; single-crate Rust layout; CI green on Windows + Linux.
 
-**Phase 1 — Rust inference + smoke test**
-- Bundle `u2netp` in the binary.
-- `inference.rs` + `pipeline.rs` + `image_io.rs` with CPU only.
-- Verified by the IoU≥0.85 smoke test on a fixture image.
-- No UI, no Tauri command yet.
-- Deliverable: working background removal on CPU with one model, test-covered.
+**Phase 1 — Rust inference + smoke test** ✅
+- Bundled `u2netp`; `inference.rs` + `pipeline.rs` + `image_io.rs`; IoU smoke test.
 
-**Phase 2 — Tauri surface**
-- `remove_image_background` command (single image, no batch).
-- `inference:progress` / `done` / `error` events.
-- Driven from a one-button stub UI.
-- Deliverable: end-to-end single-image removal callable from the frontend.
+**Phase 2 — Tauri surface** ✅
+- `remove_image_background`, progress/done/error events, cancel token.
 
-**Phase 3 — Minimal UI**
-- `useTauriFileDrop` hook (isolates the unproven drag-drop-in-Tauri path).
-- Progress bar, preview canvas, save.
-- Deliverable: working background removal through the real UI on CPU.
+**Phase 3 — Minimal UI** ✅
+- `useTauriFileDrop`, progress bar, preview canvas, custom shell (TitleBar + rail layout).
 
-**Phase 4 — EP integration**
-- `ort` features `directml` (Win) / `cuda` (Linux).
-- EP fallback chain (`[Dml|CUDA, CPU]`).
-- `set_ep` command + config persistence.
-- Deliverable: GPU acceleration on Windows (DirectML) and Linux NVIDIA (CUDA).
+**Phase 4 — EP integration** ✅
+- `ort` DirectML (Win) / CUDA (Linux); `set_ep` + config persistence.
 
-**Phase 5 — GPU detection + benchmark**
-- `gpu.rs` detection (DXGI on Win, `/dev/nvidia*` + `lspci` on Linux).
-- Silent benchmark with bundled `u2netp`, persist winner to config.
-- Settings panel with EP override + re-benchmark.
-- Deliverable: auto-picks the fastest EP; user can override.
+**Phase 5 — GPU detection + benchmark** ✅
+- `gpu.rs` detection + silent first-run benchmark; Settings EP override + re-benchmark.
 
-**Phase 6 — Model registry + lazy downloads**
-- `models.rs` full registry, `download_model` command with SHA-256 verify.
-- Mode selector UI (Balanced / Balanced+ / Max Quality).
-- On-demand download modal.
-- Deliverable: all 4 models selectable, downloaded on first use.
+**Phase 6 — Model registry + lazy downloads** ✅
+- Full registry, SHA-256 verify, `ModeSelector` download UI; codegen `gen:models`.
 
-**Phase 7 — Output polish**
-- Output dir picker, overwrite prompts.
-- Preview canvas before/after toggle.
-- Deliverable: MVP UX complete.
+**Phase 7 — Output polish** ✅
+- Output dir picker, overwrite prompts (`currentImage` + `overwrite.ts`), compare slider.
 
-**Phase 8 — E2E**
-- Playwright/WebDriver suite over the Tauri desktop target.
-- Drop a fixture image, wait for `inference:done`, assert output file exists.
-- Gated to CI nightly.
-- Deliverable: MVP complete, shippable.
+**Phase 8 — E2E** 🟡 partial
+- Mocked Playwright UI smoke on every push/PR to `main` (0.9 — wiring only, not shippability).
+- Real Tauri WebDriver E2E (1.0 — output file on disk) not wired. See `docs/production-readiness.md` §2.2.
 
-**Phase 9 (post-MVP) — Distribution**
-- Tauri updater wired to GitHub Releases.
-- NSIS + AppImage artifacts in CI.
-- README, screenshots, license notes (incl. BRIA CC-BY-NC non-commercial statement).
+**Phase 9 (post-MVP) — Distribution** ⬜
+- CI builds NSIS + AppImage artifacts (uploaded as workflow artifacts).
+- Still missing: GitHub Releases workflow, `tauri-plugin-updater`, signing keys, CHANGELOG.
+- README has license/commercial-use notes; in-app NC notice and screenshots still TODO.
 
 **Future / out of scope for v1:**
 - macOS target (CoreML).

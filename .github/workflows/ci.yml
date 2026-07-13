@@ -116,7 +116,7 @@ jobs:
           compression-level: 0
 
   e2e:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: lint
     runs-on: ubuntu-24.04
 
     steps:
@@ -133,6 +133,9 @@ jobs:
 
       - name: install Playwright Chromium
         run: bunx playwright install --with-deps chromium
+
+      - name: run frontend unit tests
+        run: bun run test
 
       - name: run mocked-frontend E2E suite
         run: xvfb-run bun run test:e2e

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import logoSvg from "./assets/logo.svg?raw";
+import appLogoSvg from "./assets/app-logo.svg?raw";
 import { FileBlock } from "./components/FileBlock";
 import { ImagePanel } from "./components/ImagePanel";
 import { InlineSvg } from "./components/InlineSvg";
@@ -24,6 +24,10 @@ import {
   invokeRunBenchmark,
 } from "./lib/tauri";
 import { applyTheme, persistTheme } from "./lib/theme";
+import {
+  onWindowDragDoubleClick,
+  onWindowDragMouseDown,
+} from "./lib/windowControls";
 import { useTauriFileDrop } from "./lib/useTauriFileDrop";
 import { useImageStore } from "./stores/imageStore";
 import { settingsStore, useSettingsStore } from "./stores/settingsStore";
@@ -175,21 +179,44 @@ function App() {
       )}
 
       {!ready && !firstRun && (
-        <div className="fullscreen-blocker" role="status" aria-busy="true" />
+        <div
+          className="fullscreen-blocker"
+          role="status"
+          aria-busy="true"
+          aria-label="Loading models"
+        >
+          Loading models…
+        </div>
+      )}
+
+      {!ready && (
+        <aside
+          className="app-rail app-rail--placeholder"
+          aria-hidden
+          data-tauri-drag-region
+          onMouseDown={onWindowDragMouseDown}
+          onDoubleClick={onWindowDragDoubleClick}
+        />
       )}
 
       {ready && (
         <>
           <aside className="app-rail">
-            {/* Scrollable controls; footer stays pinned so Process/Cancel survive short tiles. */}
-            <div className="app-rail-scroll">
+            <div
+              className="app-rail-brand"
+              data-tauri-drag-region
+              onMouseDown={onWindowDragMouseDown}
+              onDoubleClick={onWindowDragDoubleClick}
+            >
               <InlineSvg
-                svg={logoSvg}
-                className="app-rail-brand"
+                svg={appLogoSvg}
                 role="img"
                 aria-label="SwiftMask"
               />
+            </div>
 
+            {/* Scrollable controls; footer stays pinned so Process/Cancel survive short tiles. */}
+            <div className="app-rail-scroll">
               <div className="app-rail-section">
                 <FileBlock />
               </div>

@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  type MouseEvent,
   type ReactNode,
   type Ref,
   useCallback,
@@ -14,6 +13,11 @@ import settingsIcon from "../assets/icons/titlebar/settings.svg?raw";
 import squareIcon from "../assets/icons/titlebar/square.svg?raw";
 import xIcon from "../assets/icons/titlebar/x.svg?raw";
 import { epLabel } from "../lib/epLabel";
+import {
+  onWindowDragDoubleClick,
+  onWindowDragMouseDown,
+  withWindow,
+} from "../lib/windowControls";
 import { InlineSvg } from "./InlineSvg";
 
 export type TitleBarProps = {
@@ -21,16 +25,6 @@ export type TitleBarProps = {
   onOpenSettings: () => void;
   settingsButtonRef?: Ref<HTMLButtonElement>;
 };
-
-async function withWindow(
-  fn: (win: ReturnType<typeof getCurrentWindow>) => Promise<void>,
-) {
-  try {
-    await fn(getCurrentWindow());
-  } catch (err) {
-    console.error("window control failed", err);
-  }
-}
 
 export function TitleBar({
   ep,
@@ -61,31 +55,13 @@ export function TitleBar({
     return () => unlisten?.();
   }, [refreshMaximized]);
 
-  const onDragMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest("button")) return;
-    void withWindow((win) => win.startDragging());
-  };
-
-  const onDragDoubleClick = (e: MouseEvent) => {
-    // Buttons only stop mousedown/click; ignore dblclick so maximize does not race.
-    if ((e.target as HTMLElement).closest("button")) return;
-    void withWindow(async (win) => {
-      await win.toggleMaximize();
-      setMaximized(await win.isMaximized());
-    });
-  };
-
   return (
     <header
       className="titlebar"
-      onMouseDown={onDragMouseDown}
-      onDoubleClick={onDragDoubleClick}
+      onMouseDown={onWindowDragMouseDown}
+      onDoubleClick={(e) => onWindowDragDoubleClick(e, setMaximized)}
     >
       <div className="titlebar-left" data-tauri-drag-region>
-        <span className="app-title" data-tauri-drag-region>
-          SwiftMask
-        </span>
         <span
           className="ep-chip"
           title={ep ?? undefined}
