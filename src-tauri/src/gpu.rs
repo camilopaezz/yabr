@@ -190,29 +190,84 @@ fn ep_directml() -> String {
     "directml".into()
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+struct DxgiAdapterCandidate {
+    vendor_id: u32,
+    dedicated_vram: u64,
+}
+
+/// Prefer the hardware adapter with the most dedicated VRAM (skips software adapters upstream).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn select_primary_adapter(candidates: &[DxgiAdapterCandidate]) -> Option<DxgiAdapterCandidate> {
+    candidates
+        .iter()
+        .copied()
+        .max_by_key(|candidate| candidate.dedicated_vram)
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn vram_bytes_from_dedicated(dedicated: u64) -> Option<u64> {
+    if dedicated > 0 {
+        Some(dedicated)
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn query_dxgi_adapters() -> Result<Vec<DxgiAdapterCandidate>, AppError> {
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
+    };
+
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1()
+            .map_err(|e| AppError::Gpu(format!("CreateDXGIFactory1 failed: {e}")))?;
+
+        let mut candidates = Vec::new();
+        let mut index = 0u32;
+
+        loop {
+            let adapter = match factory.EnumAdapters1(index) {
+                Ok(adapter) => adapter,
+                Err(_) => break,
+            };
+            index += 1;
+
+            let mut desc = DXGI_ADAPTER_DESC1::default();
+            if let Err(e) = adapter.GetDesc1(&mut desc) {
+                log::warn!("DXGI GetDesc1 failed for adapter {index}: {e}");
+                continue;
+            }
+
+            if desc.Flags.contains(DXGI_ADAPTER_FLAG_SOFTWARE) {
+                continue;
+            }
+
+            candidates.push(DxgiAdapterCandidate {
+                vendor_id: desc.VendorId,
+                dedicated_vram: desc.DedicatedVideoMemory as u64,
+            });
+        }
+
+        Ok(candidates)
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn detect_gpu_windows() -> Result<GpuInfo, AppError> {
-    use wgpu::Backends;
-
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: Backends::DX12,
-        ..Default::default()
-    });
-
-    let adapters = instance.enumerate_adapters(Backends::DX12);
-    let mut primary_vendor = None;
-
-    for adapter in adapters {
-        let info = adapter.get_info();
-        if primary_vendor.is_none() {
-            primary_vendor = Some(info.vendor);
-        }
-    }
-
-    let vendor = primary_vendor.map(vid_to_vendor).unwrap_or_else(|| "unknown".into());
+    let candidates = query_dxgi_adapters()?;
+    let (vendor, vram_bytes) = match select_primary_adapter(&candidates) {
+        Some(best) => (
+            vid_to_vendor(best.vendor_id),
+            vram_bytes_from_dedicated(best.dedicated_vram),
+        ),
+        None => ("unknown".into(), None),
+    };
     let available_eps = vec![ep_directml(), ep_cpu()];
 
-    Ok(gpu_info(vendor, None, available_eps))
+    Ok(gpu_info(vendor, vram_bytes, available_eps))
 }
 
 pub fn run_benchmark(app: &AppHandle) -> Result<BenchmarkResult, AppError> {
@@ -296,6 +351,37 @@ mod tests {
         let info = parse_lspci(output);
         assert_eq!(info.vendor, "NVIDIA");
         assert_eq!(info.available_eps, vec!["cuda", "cpu"]);
+    }
+
+    #[test]
+    fn select_primary_adapter_picks_highest_vram() {
+        let candidates = [
+            DxgiAdapterCandidate {
+                vendor_id: INTEL_VENDOR_ID,
+                dedicated_vram: 128 * 1024 * 1024,
+            },
+            DxgiAdapterCandidate {
+                vendor_id: NVIDIA_VENDOR_ID,
+                dedicated_vram: 8 * 1024 * 1024 * 1024,
+            },
+        ];
+        let best = select_primary_adapter(&candidates).unwrap();
+        assert_eq!(best.vendor_id, NVIDIA_VENDOR_ID);
+        assert_eq!(best.dedicated_vram, 8 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn select_primary_adapter_returns_none_for_empty() {
+        assert!(select_primary_adapter(&[]).is_none());
+    }
+
+    #[test]
+    fn vram_bytes_from_dedicated_returns_none_for_zero() {
+        assert_eq!(vram_bytes_from_dedicated(0), None);
+        assert_eq!(
+            vram_bytes_from_dedicated(8 * 1024 * 1024 * 1024),
+            Some(8 * 1024 * 1024 * 1024)
+        );
     }
 
     #[test]

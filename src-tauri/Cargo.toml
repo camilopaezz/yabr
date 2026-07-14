@@ -42,7 +42,7 @@ tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 ort = { version = "2.0.0-rc.12", features = ["directml", "download-binaries"] }
-wgpu = "24"
+windows = { version = "0.58", features = ["Win32_Graphics_Dxgi"] }
 
 [target.'cfg(not(windows))'.dependencies]
 ort = { version = "2.0.0-rc.12", features = ["cuda", "download-binaries"] }
