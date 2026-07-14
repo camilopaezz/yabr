@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -155,10 +155,20 @@ pub fn model_cache_path(app: &AppHandle, model: &ModelEntry) -> Result<PathBuf, 
     Ok(model_cache_dir(app)?.join(&model.file))
 }
 
-fn is_nonempty_file(path: &PathBuf) -> bool {
+/// True when `path` is a non-empty regular file.
+/// Empty leftovers from failed/killed Windows downloads are not treated as ready.
+pub fn is_nonempty_file(path: &Path) -> bool {
     std::fs::metadata(path)
         .map(|meta| meta.is_file() && meta.len() > 0)
         .unwrap_or(false)
+}
+
+/// Whether a model can be used for inference (bundled, or non-empty on-disk cache).
+pub fn model_is_cached(app: &AppHandle, model: &ModelEntry) -> Result<bool, AppError> {
+    if model.bundled {
+        return Ok(true);
+    }
+    Ok(is_nonempty_file(&model_cache_path(app, model)?))
 }
 
 pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
@@ -187,7 +197,7 @@ pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
         .collect())
 }
 
-fn partial_path_for(file_path: &PathBuf) -> PathBuf {
+fn partial_path_for(file_path: &Path) -> PathBuf {
     let name = file_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -195,17 +205,50 @@ fn partial_path_for(file_path: &PathBuf) -> PathBuf {
     file_path.with_file_name(format!("{name}.partial"))
 }
 
-/// Emit progress only when the stage changes, pct crosses a whole percent, or
-/// download completes. Avoids flooding the webview IPC (especially WebView2 on
-/// Windows) with tens of thousands of events for large models.
+/// Emit progress only when the stage changes, pct crosses a whole percent,
+/// progress resets (retry), or download completes. Avoids flooding the webview
+/// IPC (especially WebView2 on Windows) with tens of thousands of events.
 fn should_emit_progress(last_stage: &str, last_pct: f32, stage: &str, pct: f32) -> bool {
     if stage != last_stage {
+        return true;
+    }
+    // New attempt restarts at a lower pct — must not stay frozen at the old value.
+    if pct < last_pct {
         return true;
     }
     if pct >= 100.0 && last_pct < 100.0 {
         return true;
     }
     pct.floor() > last_pct.floor()
+}
+
+/// Move a verified partial into the final cache path.
+/// Retries briefly: on Windows, AV/indexer can hold the destination after a prior write.
+async fn finalize_model_file(partial_path: &Path, file_path: &Path) -> Result<(), AppError> {
+    const ATTEMPTS: u32 = 5;
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 0..ATTEMPTS {
+        if file_path.exists() {
+            if let Err(e) = std::fs::remove_file(file_path) {
+                last_err = Some(e);
+                tokio::time::sleep(Duration::from_millis(50 * u64::from(attempt + 1))).await;
+                continue;
+            }
+        }
+        match std::fs::rename(partial_path, file_path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                tokio::time::sleep(Duration::from_millis(50 * u64::from(attempt + 1))).await;
+            }
+        }
+    }
+    Err(AppError::Model(format!(
+        "finalize download failed: {}",
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "unknown".into())
+    )))
 }
 
 pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppError> {
@@ -257,7 +300,7 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
 
 async fn download_to_file<F>(
     model: &ModelEntry,
-    file_path: &PathBuf,
+    file_path: &Path,
     mut on_progress: F,
 ) -> Result<(), AppError>
 where
@@ -274,22 +317,50 @@ where
     let partial_path = partial_path_for(file_path);
     let mut last_err: Option<AppError> = None;
     for attempt in 0..3 {
-        // Always start clean so a prior partial/empty file cannot stick the UI
-        // at 0% or poison a concurrent retry on Windows (file sharing).
-        let _ = std::fs::remove_file(&partial_path);
+        // Reuse a verified partial left by a prior finalize failure (Windows AV
+        // lock) instead of discarding SHA-passed bytes and re-downloading.
+        if is_nonempty_file(&partial_path) {
+            match verify_model_file(model, &partial_path, &mut on_progress).await {
+                Ok(()) => match finalize_model_file(&partial_path, file_path).await {
+                    Ok(()) => return Ok(()),
+                    Err(e) => {
+                        log::warn!(
+                            "download attempt {} for {} finalize failed: {}",
+                            attempt + 1,
+                            model.id,
+                            e
+                        );
+                        last_err = Some(e);
+                        if attempt < 2 {
+                            tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
+                            continue;
+                        }
+                        let _ = std::fs::remove_file(&partial_path);
+                        break;
+                    }
+                },
+                Err(_) => {
+                    let _ = std::fs::remove_file(&partial_path);
+                }
+            }
+        }
+
         match try_download(&client, model, &partial_path, &mut on_progress).await {
             Ok(()) => match verify_model_file(model, &partial_path, &mut on_progress).await {
-                Ok(()) => {
-                    // Replace destination atomically-ish: remove then rename.
-                    // On Windows, rename over an existing file can fail.
-                    if file_path.exists() {
-                        std::fs::remove_file(file_path)?;
+                Ok(()) => match finalize_model_file(&partial_path, file_path).await {
+                    Ok(()) => return Ok(()),
+                    Err(e) => {
+                        // Keep partial so the next attempt can finalize without
+                        // re-fetching (handled at loop top).
+                        log::warn!(
+                            "download attempt {} for {} finalize failed: {}",
+                            attempt + 1,
+                            model.id,
+                            e
+                        );
+                        last_err = Some(e);
                     }
-                    std::fs::rename(&partial_path, file_path).map_err(|e| {
-                        AppError::Model(format!("finalize download failed: {}", e))
-                    })?;
-                    return Ok(());
-                }
+                },
                 Err(e) => {
                     let _ = std::fs::remove_file(&partial_path);
                     log::warn!(
@@ -584,6 +655,22 @@ mod tests {
         assert!(should_emit_progress("download", 0.0, "download", 1.0));
         assert!(should_emit_progress("download", 99.0, "download", 100.0));
         assert!(should_emit_progress("download", 100.0, "verify", 0.0));
+        // Retry restarts progress — must emit so the bar does not freeze mid-retry.
+        assert!(should_emit_progress("download", 80.0, "download", 0.0));
+        assert!(should_emit_progress("download", 80.0, "download", 40.0));
+    }
+
+    #[test]
+    fn is_nonempty_file_rejects_empty_and_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing.bin");
+        assert!(!is_nonempty_file(&missing));
+        let empty = temp.path().join("empty.bin");
+        std::fs::write(&empty, b"").unwrap();
+        assert!(!is_nonempty_file(&empty));
+        let ok = temp.path().join("ok.bin");
+        std::fs::write(&ok, b"x").unwrap();
+        assert!(is_nonempty_file(&ok));
     }
 
     #[test]

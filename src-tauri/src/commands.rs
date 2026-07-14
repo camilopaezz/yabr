@@ -126,11 +126,7 @@ pub async fn remove_image_background(
                 Ok(crate::config::load_config(&app_for_ep)?.execution_provider())
             };
             let model_is_ready = |model: &crate::models::ModelEntry| {
-                if model.bundled {
-                    Ok(true)
-                } else {
-                    Ok(crate::models::model_cache_path(&app_for_ready, model)?.exists())
-                }
+                crate::models::model_is_cached(&app_for_ready, model)
             };
             let load_model_bytes = |model: &crate::models::ModelEntry| {
                 if model.bundled {
