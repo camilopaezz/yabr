@@ -132,7 +132,7 @@ test.describe("SwiftMask", () => {
     await expect(ncDialog).toBeVisible();
 
     await ncDialog
-      .getByRole("button", { name: "I understand — download" })
+      .getByRole("button", { name: "I understand" })
       .click();
     await expect(ncDialog).toHaveCount(0);
     await expect(

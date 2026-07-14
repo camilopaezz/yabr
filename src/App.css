@@ -485,9 +485,12 @@ button.titlebar-close:hover:not(:disabled) {
 }
 
 .mode-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
   align-items: center;
-  gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -542,18 +545,14 @@ button.titlebar-close:hover:not(:disabled) {
 }
 
 .mode-option-name {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
 }
 
 .mode-option-badge {
   font-size: 0.72rem;
   color: var(--fg-muted);
-  flex-shrink: 0;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   transition:
     color var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out);
@@ -567,9 +566,11 @@ button.titlebar-close:hover:not(:disabled) {
 .mode-option-badges {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  max-width: 52%;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
 }
 
 .mode-option-model {
@@ -594,10 +595,9 @@ button.mode-option-download {
   font-size: 0.72rem;
   color: var(--accent);
   cursor: pointer;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
   transition:
     color var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out),
@@ -619,6 +619,9 @@ button.mode-option-download:disabled {
 }
 
 .mode-option input {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
   width: auto;
   margin: 0;
   accent-color: var(--accent);

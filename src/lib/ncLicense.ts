@@ -56,6 +56,6 @@ export const NC_LICENSE_MODAL_COPY = {
     "For commercial use, choose Turbo or Balanced, or obtain a separate license from the model rights holder (BRIA).",
   licenseLabel: "CC BY-NC 4.0",
   licenseUrl: NC_LICENSE_URL,
-  acceptLabel: "I understand — download",
+  acceptLabel: "I understand",
   cancelLabel: "Cancel",
 } as const;
