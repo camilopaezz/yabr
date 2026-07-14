@@ -36,6 +36,10 @@ export function ModeSelector() {
   useEffect(() => {
     if (!downloadPresence.rendered) {
       setDisplayModel(null);
+      // Reset progress only after exit animation so the modal does not flash
+      // back to an empty "Downloading 0%" state on completion.
+      setDownloadProgress(0);
+      setDownloadStage("download");
     }
   }, [downloadPresence.rendered]);
 
@@ -66,44 +70,47 @@ export function ModeSelector() {
 
     let unsubscribe: (() => void) | undefined;
     let cleanedUp = false;
+    const modelId = downloading.id;
+    const modelMode = downloading.id as ModelMode;
 
-    listenModelDownload((payload) => {
-      if (payload.model_id === downloading.id) {
-        setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
-        if (payload.stage === "verify") {
-          setDownloadStage("verify");
-        } else {
-          setDownloadStage("download");
+    // Subscribe first, then start the transfer. Starting both in parallel can
+    // miss early progress/verify events (worse on slower Windows WebView2 IPC).
+    void (async () => {
+      try {
+        const unsub = await listenModelDownload((payload) => {
+          if (payload.model_id !== modelId) return;
+          setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
+          setDownloadStage(payload.stage === "verify" ? "verify" : "download");
+        });
+        if (cleanedUp) {
+          unsub();
+          return;
         }
-      }
-    }).then((unsub) => {
-      if (!cleanedUp) {
         unsubscribe = unsub;
-      } else {
-        unsub();
-      }
-    });
 
-    invokeDownloadModel(downloading.id)
-      .then(() => {
-        if (!isCancelledRef.current) {
-          setMode(downloading.id as ModelMode);
+        await invokeDownloadModel(modelId);
+        if (!cleanedUp && !isCancelledRef.current) {
+          setMode(modelMode);
         }
-        invokeListModels()
-          .then(applyModels)
-          .catch((err: unknown) =>
-            console.error("failed to refresh models", err),
-          );
-      })
-      .catch((err: unknown) => {
+        try {
+          const list = await invokeListModels();
+          if (!cleanedUp) {
+            applyModels(list);
+          }
+        } catch (err: unknown) {
+          console.error("failed to refresh models", err);
+        }
+      } catch (err: unknown) {
         console.error("download failed", err);
-      })
-      .finally(() => {
-        setDownloading(null);
-        setDownloadProgress(0);
-        setDownloadStage("download");
-        isCancelledRef.current = false;
-      });
+      } finally {
+        // Only clear if this session is still active. A cancelled/re-started
+        // download must not wipe the newer session's UI (Windows double-start).
+        if (!cleanedUp) {
+          setDownloading(null);
+          isCancelledRef.current = false;
+        }
+      }
+    })();
 
     return () => {
       cleanedUp = true;

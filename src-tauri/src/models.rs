@@ -155,12 +155,19 @@ pub fn model_cache_path(app: &AppHandle, model: &ModelEntry) -> Result<PathBuf, 
     Ok(model_cache_dir(app)?.join(&model.file))
 }
 
+fn is_nonempty_file(path: &PathBuf) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
+}
+
 pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
     let cache_dir = model_cache_dir(app)?;
     Ok(static_registry()
         .iter()
         .map(|m| {
-            let downloaded = m.bundled || cache_dir.join(&m.file).exists();
+            // Empty files (failed/killed Windows downloads) must not count as ready.
+            let downloaded = m.bundled || is_nonempty_file(&cache_dir.join(&m.file));
             ModelMeta {
                 id: m.id.clone(),
                 name: m.name.clone(),
@@ -180,6 +187,27 @@ pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
         .collect())
 }
 
+fn partial_path_for(file_path: &PathBuf) -> PathBuf {
+    let name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "model.bin".into());
+    file_path.with_file_name(format!("{name}.partial"))
+}
+
+/// Emit progress only when the stage changes, pct crosses a whole percent, or
+/// download completes. Avoids flooding the webview IPC (especially WebView2 on
+/// Windows) with tens of thousands of events for large models.
+fn should_emit_progress(last_stage: &str, last_pct: f32, stage: &str, pct: f32) -> bool {
+    if stage != last_stage {
+        return true;
+    }
+    if pct >= 100.0 && last_pct < 100.0 {
+        return true;
+    }
+    pct.floor() > last_pct.floor()
+}
+
 pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppError> {
     let model = find_model(model_id)?;
     if model.bundled {
@@ -187,21 +215,17 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
     }
     let cache_dir = model_cache_dir(app)?;
     let file_path = cache_dir.join(&model.file);
-    if file_path.exists() {
-        app.emit(
-            MODEL_DOWNLOAD,
-            ModelDownloadPayload {
-                model_id: model_id.to_string(),
-                pct: 100.0,
-                stage: "download".into(),
-            },
-        )
-        .map_err(|e| AppError::Model(e.to_string()))?;
-        return Ok(());
-    }
     std::fs::create_dir_all(&cache_dir)?;
 
-    download_to_file(model, &file_path, |stage, pct| {
+    let mut last_stage = String::new();
+    let mut last_pct = -1.0f32;
+    let mut on_progress = |stage: &str, pct: f32| {
+        let pct = pct.clamp(0.0, 100.0);
+        if !should_emit_progress(&last_stage, last_pct, stage, pct) {
+            return;
+        }
+        last_stage = stage.to_string();
+        last_pct = pct;
         let _ = app.emit(
             MODEL_DOWNLOAD,
             ModelDownloadPayload {
@@ -210,8 +234,25 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
                 stage: stage.into(),
             },
         );
-    })
-    .await
+    };
+
+    // Intact cache hit: verify, then skip re-download. Corrupt/partial finals
+    // are removed so we never treat an empty Windows write as ready.
+    if file_path.exists() {
+        match verify_model_file(model, &file_path, &mut on_progress).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                log::warn!(
+                    "cached model {} failed verification, re-downloading: {}",
+                    model.id,
+                    e
+                );
+                let _ = std::fs::remove_file(&file_path);
+            }
+        }
+    }
+
+    download_to_file(model, &file_path, on_progress).await
 }
 
 async fn download_to_file<F>(
@@ -224,43 +265,102 @@ where
 {
     let client = reqwest::Client::builder()
         .use_rustls_tls()
+        .user_agent(concat!("SwiftMask/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60 * 30))
         .build()
         .map_err(|e| AppError::Model(e.to_string()))?;
 
+    let partial_path = partial_path_for(file_path);
     let mut last_err: Option<AppError> = None;
     for attempt in 0..3 {
-        match try_download(&client, model, file_path, &mut on_progress).await {
-            Ok(()) => {
-                if is_placeholder_checksum(&model.sha256) {
+        // Always start clean so a prior partial/empty file cannot stick the UI
+        // at 0% or poison a concurrent retry on Windows (file sharing).
+        let _ = std::fs::remove_file(&partial_path);
+        match try_download(&client, model, &partial_path, &mut on_progress).await {
+            Ok(()) => match verify_model_file(model, &partial_path, &mut on_progress).await {
+                Ok(()) => {
+                    // Replace destination atomically-ish: remove then rename.
+                    // On Windows, rename over an existing file can fail.
+                    if file_path.exists() {
+                        std::fs::remove_file(file_path)?;
+                    }
+                    std::fs::rename(&partial_path, file_path).map_err(|e| {
+                        AppError::Model(format!("finalize download failed: {}", e))
+                    })?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&partial_path);
                     log::warn!(
-                        "Skipping SHA-256 verification for {}: placeholder checksum",
-                        model.id
+                        "download attempt {} for {} failed verification: {}",
+                        attempt + 1,
+                        model.id,
+                        e
                     );
-                    on_progress("download", 100.0);
-                    return Ok(());
+                    last_err = Some(e);
                 }
-                on_progress("verify", 100.0);
-                let computed = sha256_file(file_path)?;
-                if computed.eq_ignore_ascii_case(&model.sha256) {
-                    on_progress("verify", 100.0);
-                    return Ok(());
-                }
-                std::fs::remove_file(file_path)?;
-                return Err(AppError::Model(format!(
-                    "SHA-256 mismatch for {}",
-                    model.id
-                )));
-            }
+            },
             Err(e) => {
-                log::warn!("download attempt {} for {} failed: {}", attempt + 1, model.id, e);
+                let _ = std::fs::remove_file(&partial_path);
+                log::warn!(
+                    "download attempt {} for {} failed: {}",
+                    attempt + 1,
+                    model.id,
+                    e
+                );
                 last_err = Some(e);
-                if attempt < 2 {
-                    tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
-                }
             }
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
         }
     }
     Err(last_err.unwrap_or_else(|| AppError::Model(format!("download failed for {}", model.id))))
+}
+
+async fn verify_model_file<F>(
+    model: &ModelEntry,
+    file_path: &PathBuf,
+    on_progress: &mut F,
+) -> Result<(), AppError>
+where
+    F: FnMut(&str, f32) + Send,
+{
+    if is_placeholder_checksum(&model.sha256) {
+        log::warn!(
+            "Skipping SHA-256 verification for {}: placeholder checksum",
+            model.id
+        );
+        on_progress("download", 100.0);
+        return Ok(());
+    }
+
+    // Reject empty/truncated files early (common after a killed Windows download).
+    let meta = std::fs::metadata(file_path)
+        .map_err(|e| AppError::Model(format!("stat failed: {}", e)))?;
+    if meta.len() == 0 {
+        return Err(AppError::Model(format!(
+            "downloaded file is empty for {}",
+            model.id
+        )));
+    }
+
+    // Stage switch only — keep pct at 100 so the bar does not flash empty
+    // while hashing (can take a second on large models / Windows AV).
+    on_progress("verify", 100.0);
+    let path = file_path.clone();
+    let computed = tokio::task::spawn_blocking(move || sha256_file(&path))
+        .await
+        .map_err(|e| AppError::Model(format!("verify task failed: {}", e)))??;
+    if computed.eq_ignore_ascii_case(&model.sha256) {
+        on_progress("verify", 100.0);
+        return Ok(());
+    }
+    Err(AppError::Model(format!(
+        "SHA-256 mismatch for {}",
+        model.id
+    )))
 }
 
 async fn try_download<F>(
@@ -285,12 +385,21 @@ where
         )));
     }
 
-    let total = response.content_length().unwrap_or(0);
+    // Prefer HTTP Content-Length; fall back to registry size so progress is not
+    // stuck at 0% when CDNs omit length (chunked / some Windows TLS paths).
+    let total = response
+        .content_length()
+        .filter(|&n| n > 0)
+        .unwrap_or(model.size_bytes)
+        .max(1);
     let mut file = tokio::fs::File::create(file_path)
         .await
         .map_err(|e| AppError::Model(format!("create file failed: {}", e)))?;
     let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
+
+    // Initial tick so the UI leaves the empty 0% state as soon as streaming starts.
+    on_progress("download", 0.0);
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| AppError::Model(format!("stream error: {}", e)))?;
@@ -298,17 +407,29 @@ where
             .await
             .map_err(|e| AppError::Model(format!("write failed: {}", e)))?;
         downloaded += chunk.len() as u64;
-        let pct = if total > 0 {
-            (downloaded as f32 / total as f32) * 100.0
-        } else {
-            0.0
-        };
+        // Cap at 99% until the stream ends so verify is a distinct stage.
+        let pct = ((downloaded as f32 / total as f32) * 100.0).min(99.0);
         on_progress("download", pct);
+    }
+
+    if downloaded == 0 {
+        return Err(AppError::Model(format!(
+            "download returned empty body for {}",
+            model.id
+        )));
     }
 
     file.flush()
         .await
         .map_err(|e| AppError::Model(format!("flush failed: {}", e)))?;
+    // Ensure data is durable and the handle is fully closed before verify/rename
+    // (Windows can otherwise race antivirus or share-mode opens).
+    file.sync_all()
+        .await
+        .map_err(|e| AppError::Model(format!("sync failed: {}", e)))?;
+    drop(file);
+
+    on_progress("download", 100.0);
     Ok(())
 }
 
@@ -456,6 +577,24 @@ mod tests {
         assert_eq!(sha256_file(&path).unwrap(), expected);
     }
 
+    #[test]
+    fn should_emit_progress_on_stage_change_and_percent_steps() {
+        assert!(should_emit_progress("download", -1.0, "download", 0.0));
+        assert!(!should_emit_progress("download", 0.0, "download", 0.4));
+        assert!(should_emit_progress("download", 0.0, "download", 1.0));
+        assert!(should_emit_progress("download", 99.0, "download", 100.0));
+        assert!(should_emit_progress("download", 100.0, "verify", 0.0));
+    }
+
+    #[test]
+    fn partial_path_appends_suffix() {
+        let path = PathBuf::from("/tmp/rmbg-1.4.onnx");
+        assert_eq!(
+            partial_path_for(&path),
+            PathBuf::from("/tmp/rmbg-1.4.onnx.partial")
+        );
+    }
+
     #[tokio::test]
     async fn download_to_file_fetches_and_verifies_sha256() {
         let data = b"hello swiftmask";
@@ -486,9 +625,75 @@ mod tests {
         .await
         .unwrap();
         assert!(path.exists());
+        assert!(!partial_path_for(&path).exists());
         assert_eq!(sha256_file(&path).unwrap(), expected_hash);
         assert!(progress_values.iter().any(|&p| p > 0.0));
         assert!(stages.iter().any(|s| s == "download"));
+        assert!(stages.iter().any(|s| s == "verify"));
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn download_to_file_uses_size_bytes_when_content_length_missing() {
+        // Server omits Content-Length (chunked-style); progress must still advance
+        // via model.size_bytes so the UI does not stay at an empty 0% bar.
+        use tokio::io::AsyncWriteExt;
+
+        let data = b"hello swiftmask without content-length";
+        let expected_hash = compute_sha256(data);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            for _ in 0..3 {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                if read_http_headers(&mut stream).await.is_err() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n"
+                );
+                if stream.write_all(response.as_bytes()).await.is_err() {
+                    continue;
+                }
+                if stream.write_all(data).await.is_err() {
+                    continue;
+                }
+                let _ = stream.flush().await;
+                let _ = stream.shutdown().await;
+            }
+        });
+        let model = ModelEntry {
+            id: "test".into(),
+            name: "Test".into(),
+            file: "test.bin".into(),
+            size_bytes: data.len() as u64,
+            input_size: 0,
+            mean: vec![],
+            std: vec![],
+            license: "".into(),
+            source: "".into(),
+            download_url: format!("http://127.0.0.1:{}/test.bin", port),
+            sha256: expected_hash.clone(),
+            bundled: false,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test.bin");
+        let mut progress_values = vec![];
+        let mut stages = vec![];
+        download_to_file(&model, &path, |stage, pct| {
+            stages.push(stage.to_string());
+            progress_values.push(pct);
+        })
+        .await
+        .unwrap();
+        assert!(path.exists());
+        assert_eq!(sha256_file(&path).unwrap(), expected_hash);
+        assert!(
+            progress_values.iter().any(|&p| p > 0.0 && p < 100.0),
+            "expected mid-download progress using size_bytes fallback, got {progress_values:?}"
+        );
         assert!(stages.iter().any(|s| s == "verify"));
         handle.abort();
     }
@@ -548,6 +753,7 @@ mod tests {
             "expected SHA-256 mismatch, got: {err}"
         );
         assert!(!path.exists());
+        assert!(!partial_path_for(&path).exists());
         handle.abort();
     }
 }
