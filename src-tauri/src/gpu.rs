@@ -218,7 +218,7 @@ fn vram_bytes_from_dedicated(dedicated: u64) -> Option<u64> {
 #[cfg(target_os = "windows")]
 fn query_dxgi_adapters() -> Result<Vec<DxgiAdapterCandidate>, AppError> {
     use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory1, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
+        CreateDXGIFactory1, DXGI_ADAPTER_FLAG, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
     };
 
     unsafe {
@@ -235,13 +235,16 @@ fn query_dxgi_adapters() -> Result<Vec<DxgiAdapterCandidate>, AppError> {
             };
             index += 1;
 
-            let mut desc = DXGI_ADAPTER_DESC1::default();
-            if let Err(e) = adapter.GetDesc1(&mut desc) {
-                log::warn!("DXGI GetDesc1 failed for adapter {index}: {e}");
-                continue;
-            }
+            let desc = match adapter.GetDesc1() {
+                Ok(desc) => desc,
+                Err(e) => {
+                    log::warn!("DXGI GetDesc1 failed for adapter {index}: {e}");
+                    continue;
+                }
+            };
 
-            if desc.Flags.contains(DXGI_ADAPTER_FLAG_SOFTWARE) {
+            let flags = DXGI_ADAPTER_FLAG(desc.Flags as i32);
+            if flags.contains(DXGI_ADAPTER_FLAG_SOFTWARE) {
                 continue;
             }
 
