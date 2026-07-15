@@ -1,5 +1,4 @@
 import { ask } from "@tauri-apps/plugin-dialog";
-import { exists } from "@tauri-apps/plugin-fs";
 import { type ImageItem, imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
 import { shouldProceedWithOverwrite } from "./overwrite";
@@ -9,6 +8,7 @@ import {
   type InferenceErrorPayload,
   type InferenceProgressPayload,
   invokeCancelInference,
+  invokePathExists,
   invokeRemoveImageBackground,
   listenInferenceDone,
   listenInferenceError,
@@ -263,7 +263,8 @@ export const initEventListeners = initCurrentImageListeners;
 
 export function prodStartProcessDeps(): StartProcessDeps {
   return {
-    exists: (p) => exists(p),
+    // Native command — not plugin-fs — so arbitrary user paths work on Windows.
+    exists: (p) => invokePathExists(p),
     ask: (msg) => ask(msg),
     removeBackground: invokeRemoveImageBackground,
     getSettings: () => {

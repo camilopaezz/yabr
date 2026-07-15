@@ -173,6 +173,13 @@ pub async fn cancel_inference(state: State<'_, Arc<ProcessingState>>) -> Result<
     Ok(())
 }
 
+/// Check whether a path exists using native FS (not the scoped frontend plugin).
+/// Required for overwrite prompts when the output dir is outside `$HOME` etc.
+#[tauri::command]
+pub async fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
 #[tauri::command]
 pub async fn pick_output_dir(app: AppHandle) -> Result<Option<String>, AppError> {
     let config = crate::config::load_config(&app)?;
