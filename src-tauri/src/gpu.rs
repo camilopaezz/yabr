@@ -291,7 +291,7 @@ fn query_dxcore_directml_adapter() -> Option<DxCoreAdapterCandidate> {
 
         // GENERIC_ML first (ORT DML2); on empty list or HRESULT, fall through to CORE_COMPUTE.
         let adapter_list: IDXCoreAdapterList = match factory
-            .CreateAdapterList(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_ML])
+            .CreateAdapterList::<IDXCoreAdapterList>(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_ML])
         {
             Ok(list) if list.GetAdapterCount() > 0 => list,
             generic_result => {
@@ -300,7 +300,10 @@ fn query_dxcore_directml_adapter() -> Option<DxCoreAdapterCandidate> {
                         "DXCore CreateAdapterList (GENERIC_ML) failed: {e}; trying CORE_COMPUTE"
                     );
                 }
-                match factory.CreateAdapterList(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE]) {
+                match factory
+                    .CreateAdapterList::<IDXCoreAdapterList>(&[
+                        DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE,
+                    ]) {
                     Ok(list) => list,
                     Err(e) => {
                         log::warn!("DXCore CreateAdapterList (CORE_COMPUTE) failed: {e}");
