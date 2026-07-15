@@ -190,20 +190,33 @@ fn ep_directml() -> String {
     "directml".into()
 }
 
+// Not exported by windows 0.58 DXCore; GUID from DirectX-Headers (D3D12_GENERIC_ML).
+#[cfg(target_os = "windows")]
+const DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_ML: windows::core::GUID =
+    windows::core::GUID::from_u128(0xb71b0d41_1088_422f_a27c_0250b7d3a988);
+
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[derive(Debug, Clone, Copy)]
-struct DxgiAdapterCandidate {
+struct DxCoreAdapterCandidate {
+    is_hardware: bool,
+    supports_d3d12_graphics: bool,
     vendor_id: u32,
     dedicated_vram: u64,
 }
 
-/// Prefer the hardware adapter with the most dedicated VRAM (skips software adapters upstream).
+/// Mirrors ORT DirectML default path: hardware GPU with D3D12 graphics support.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-fn select_primary_adapter(candidates: &[DxgiAdapterCandidate]) -> Option<DxgiAdapterCandidate> {
+fn is_directml_gpu_adapter(candidate: &DxCoreAdapterCandidate) -> bool {
+    candidate.is_hardware && candidate.supports_d3d12_graphics
+}
+
+/// First adapter after DXCore HighPerformance sort that passes the DirectML GPU filter.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn select_directml_adapter(candidates: &[DxCoreAdapterCandidate]) -> Option<DxCoreAdapterCandidate> {
     candidates
         .iter()
         .copied()
-        .max_by_key(|candidate| candidate.dedicated_vram)
+        .find(is_directml_gpu_adapter)
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -216,57 +229,135 @@ fn vram_bytes_from_dedicated(dedicated: u64) -> Option<u64> {
 }
 
 #[cfg(target_os = "windows")]
-fn query_dxgi_adapters() -> Result<Vec<DxgiAdapterCandidate>, AppError> {
-    use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory1, DXGI_ADAPTER_FLAG, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1,
+fn read_dxcore_adapter_candidate(
+    adapter: &windows::Win32::Graphics::DXCore::IDXCoreAdapter,
+) -> Result<DxCoreAdapterCandidate, windows::core::Error> {
+    use std::mem::size_of;
+
+    use windows::Win32::Graphics::DXCore::{
+        DedicatedAdapterMemory, DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS, DXCoreHardwareID,
+        HardwareID, IsHardware,
     };
 
     unsafe {
-        let factory: IDXGIFactory1 = CreateDXGIFactory1()
-            .map_err(|e| AppError::Gpu(format!("CreateDXGIFactory1 failed: {e}")))?;
+        let mut is_hardware = false;
+        adapter.GetProperty(
+            IsHardware,
+            size_of::<bool>(),
+            &mut is_hardware as *mut _ as *mut _,
+        )?;
 
-        let mut candidates = Vec::new();
-        let mut index = 0u32;
+        let supports_d3d12_graphics =
+            adapter.IsAttributeSupported(&DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS);
 
-        loop {
-            let adapter = match factory.EnumAdapters1(index) {
+        let mut hardware_id = DXCoreHardwareID::default();
+        adapter.GetProperty(
+            HardwareID,
+            size_of::<DXCoreHardwareID>(),
+            &mut hardware_id as *mut _ as *mut _,
+        )?;
+
+        let mut dedicated_vram = 0u64;
+        adapter.GetProperty(
+            DedicatedAdapterMemory,
+            size_of::<u64>(),
+            &mut dedicated_vram as *mut _ as *mut _,
+        )?;
+
+        Ok(DxCoreAdapterCandidate {
+            is_hardware,
+            supports_d3d12_graphics,
+            vendor_id: hardware_id.vendorID,
+            dedicated_vram,
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn query_dxcore_directml_adapter() -> Option<DxCoreAdapterCandidate> {
+    use windows::Win32::Graphics::DXCore::{
+        DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE, DXCoreCreateAdapterFactory, HighPerformance,
+        IDXCoreAdapter, IDXCoreAdapterFactory, IDXCoreAdapterList,
+    };
+
+    unsafe {
+        let factory: IDXCoreAdapterFactory = match DXCoreCreateAdapterFactory() {
+            Ok(factory) => factory,
+            Err(e) => {
+                log::warn!("DXCoreCreateAdapterFactory failed: {e}");
+                return None;
+            }
+        };
+
+        // GENERIC_ML first (ORT DML2); on empty list or HRESULT, fall through to CORE_COMPUTE.
+        let adapter_list: IDXCoreAdapterList = match factory
+            .CreateAdapterList(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_GENERIC_ML])
+        {
+            Ok(list) if list.GetAdapterCount() > 0 => list,
+            generic_result => {
+                if let Err(e) = generic_result {
+                    log::warn!(
+                        "DXCore CreateAdapterList (GENERIC_ML) failed: {e}; trying CORE_COMPUTE"
+                    );
+                }
+                match factory.CreateAdapterList(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE]) {
+                    Ok(list) => list,
+                    Err(e) => {
+                        log::warn!("DXCore CreateAdapterList (CORE_COMPUTE) failed: {e}");
+                        return None;
+                    }
+                }
+            }
+        };
+
+        let count = adapter_list.GetAdapterCount();
+        if count == 0 {
+            log::warn!("DXCore: no adapters found");
+            return None;
+        }
+
+        // Match ORT: skip sort for a single adapter; on failure keep factory order.
+        if count > 1 {
+            if let Err(e) = adapter_list.Sort(&[HighPerformance]) {
+                log::warn!(
+                    "DXCore adapter list Sort failed: {e}; continuing with unsorted list"
+                );
+            }
+        }
+
+        let mut candidates = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let adapter = match adapter_list.GetAdapter::<IDXCoreAdapter>(index) {
                 Ok(adapter) => adapter,
-                Err(_) => break,
-            };
-            index += 1;
-
-            let desc = match adapter.GetDesc1() {
-                Ok(desc) => desc,
                 Err(e) => {
-                    log::warn!("DXGI GetDesc1 failed for adapter {index}: {e}");
+                    log::warn!("DXCore GetAdapter failed for adapter {index}: {e}");
                     continue;
                 }
             };
 
-            let flags = DXGI_ADAPTER_FLAG(desc.Flags as i32);
-            if flags.contains(DXGI_ADAPTER_FLAG_SOFTWARE) {
-                continue;
+            match read_dxcore_adapter_candidate(&adapter) {
+                Ok(candidate) => candidates.push(candidate),
+                Err(e) => {
+                    log::warn!("DXCore adapter {index} property read failed: {e}");
+                }
             }
-
-            candidates.push(DxgiAdapterCandidate {
-                vendor_id: desc.VendorId,
-                dedicated_vram: desc.DedicatedVideoMemory as u64,
-            });
         }
 
-        Ok(candidates)
+        select_directml_adapter(&candidates)
     }
 }
 
 #[cfg(target_os = "windows")]
 fn detect_gpu_windows() -> Result<GpuInfo, AppError> {
-    let candidates = query_dxgi_adapters()?;
-    let (vendor, vram_bytes) = match select_primary_adapter(&candidates) {
+    let (vendor, vram_bytes) = match query_dxcore_directml_adapter() {
         Some(best) => (
             vid_to_vendor(best.vendor_id),
             vram_bytes_from_dedicated(best.dedicated_vram),
         ),
-        None => ("unknown".into(), None),
+        None => {
+            log::warn!("DXCore GPU detection unavailable; reporting unknown vendor/VRAM");
+            ("unknown".into(), None)
+        }
     };
     let available_eps = vec![ep_directml(), ep_cpu()];
 
@@ -357,25 +448,76 @@ mod tests {
     }
 
     #[test]
-    fn select_primary_adapter_picks_highest_vram() {
+    fn is_directml_gpu_adapter_requires_hardware_and_graphics() {
+        assert!(!is_directml_gpu_adapter(&DxCoreAdapterCandidate {
+            is_hardware: false,
+            supports_d3d12_graphics: true,
+            vendor_id: NVIDIA_VENDOR_ID,
+            dedicated_vram: 8 * 1024 * 1024 * 1024,
+        }));
+        assert!(!is_directml_gpu_adapter(&DxCoreAdapterCandidate {
+            is_hardware: true,
+            supports_d3d12_graphics: false,
+            vendor_id: 0,
+            dedicated_vram: 0,
+        }));
+        assert!(is_directml_gpu_adapter(&DxCoreAdapterCandidate {
+            is_hardware: true,
+            supports_d3d12_graphics: true,
+            vendor_id: NVIDIA_VENDOR_ID,
+            dedicated_vram: 8 * 1024 * 1024 * 1024,
+        }));
+    }
+
+    #[test]
+    fn select_directml_adapter_picks_first_sorted_gpu_not_max_vram() {
         let candidates = [
-            DxgiAdapterCandidate {
+            DxCoreAdapterCandidate {
+                is_hardware: false,
+                supports_d3d12_graphics: true,
                 vendor_id: INTEL_VENDOR_ID,
-                dedicated_vram: 128 * 1024 * 1024,
+                dedicated_vram: 0,
             },
-            DxgiAdapterCandidate {
+            DxCoreAdapterCandidate {
+                is_hardware: true,
+                supports_d3d12_graphics: false,
+                vendor_id: 0,
+                dedicated_vram: 0,
+            },
+            DxCoreAdapterCandidate {
+                is_hardware: true,
+                supports_d3d12_graphics: true,
                 vendor_id: NVIDIA_VENDOR_ID,
                 dedicated_vram: 8 * 1024 * 1024 * 1024,
             },
+            DxCoreAdapterCandidate {
+                is_hardware: true,
+                supports_d3d12_graphics: true,
+                vendor_id: AMD_VENDOR_ID,
+                dedicated_vram: 16 * 1024 * 1024 * 1024,
+            },
         ];
-        let best = select_primary_adapter(&candidates).unwrap();
+        let best = select_directml_adapter(&candidates).unwrap();
         assert_eq!(best.vendor_id, NVIDIA_VENDOR_ID);
         assert_eq!(best.dedicated_vram, 8 * 1024 * 1024 * 1024);
     }
 
     #[test]
-    fn select_primary_adapter_returns_none_for_empty() {
-        assert!(select_primary_adapter(&[]).is_none());
+    fn select_directml_adapter_returns_none_for_empty() {
+        assert!(select_directml_adapter(&[]).is_none());
+    }
+
+    #[test]
+    fn select_directml_adapter_accepts_zero_dedicated_vram_igpu() {
+        let candidates = [DxCoreAdapterCandidate {
+            is_hardware: true,
+            supports_d3d12_graphics: true,
+            vendor_id: INTEL_VENDOR_ID,
+            dedicated_vram: 0,
+        }];
+        let best = select_directml_adapter(&candidates).unwrap();
+        assert_eq!(best.vendor_id, INTEL_VENDOR_ID);
+        assert_eq!(vram_bytes_from_dedicated(best.dedicated_vram), None);
     }
 
     #[test]
