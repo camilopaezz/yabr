@@ -14,7 +14,6 @@ pub mod processing;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(crate::processing::ProcessingState::new())
         .invoke_handler(tauri::generate_handler![
@@ -25,6 +24,7 @@ pub fn run() {
             commands::download_model,
             commands::remove_image_background,
             commands::cancel_inference,
+            commands::path_exists,
             commands::pick_output_dir,
             commands::get_runtime_info,
             commands::get_config,

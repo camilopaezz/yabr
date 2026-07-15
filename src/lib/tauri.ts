@@ -133,6 +133,11 @@ export function invokeCancelInference(): Promise<void> {
   return tauriInvoke("cancel_inference");
 }
 
+/** Native path existence check (no frontend fs scope). */
+export function invokePathExists(path: string): Promise<boolean> {
+  return tauriInvoke("path_exists", { path });
+}
+
 export function listenInferenceProgress(
   handler: (payload: InferenceProgressPayload) => void,
 ): Promise<() => void> {

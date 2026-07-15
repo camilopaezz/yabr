@@ -82,32 +82,43 @@ fn run_inner(
     let timer = StageTimer::start("decoding");
     let image_bytes = std::fs::read(&job.input_path)?;
     let img = crate::image_io::decode(&image_bytes)?;
+    drop(image_bytes);
     let original_size = (img.width(), img.height());
-    let rgb = img.to_rgb8();
     stages.push(timer.finish());
 
     deps.sink.on_progress("preprocessing", 20.0)?;
     state.check_cancel()?;
     let timer = StageTimer::start("preprocessing");
     let tensor = crate::pipeline::preprocess(model, &img)?;
+    // Consume img into rgb so we never hold DynamicImage + RgbImage together.
+    let rgb = img.into_rgb8();
     stages.push(timer.finish());
 
     deps.sink.on_progress("inferring", 50.0)?;
     state.check_cancel()?;
     let timer = StageTimer::start("inferring");
     let ep = (deps.execution_provider)()?;
-    let output = crate::inference::with_session(
-        &job.model_id,
-        &ep,
-        || (deps.load_model_bytes)(model),
-        |session| crate::inference::run(session, &tensor),
-    )?;
+    // Scope so the preprocess tensor (~12 MiB at 1024²) is dropped before
+    // postprocess on success. Multi-GB pressure is the ORT session, released
+    // inside with_session on error — not this ndarray.
+    let output = {
+        let tensor = tensor;
+        crate::inference::with_session(
+            &job.model_id,
+            &ep,
+            || (deps.load_model_bytes)(model),
+            |session| crate::inference::run(session, &tensor),
+        )?
+    };
     stages.push(timer.finish());
 
     deps.sink.on_progress("postprocessing", 80.0)?;
     state.check_cancel()?;
     let timer = StageTimer::start("postprocessing");
-    let alpha = crate::pipeline::postprocess(&job.model_id, original_size, &output)?;
+    let alpha = {
+        let output = output;
+        crate::pipeline::postprocess(&job.model_id, original_size, &output)?
+    };
     stages.push(timer.finish());
 
     deps.sink.on_progress("encoding", 95.0)?;
