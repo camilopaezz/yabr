@@ -15,6 +15,8 @@ pub const EP_CUDA: &str = "cuda";
 
 pub static U2NETP_MODEL_BYTES: &[u8] = include_bytes!("../models/u2netp.onnx");
 
+/// Short-lived holders for in-flight loads / concurrent use. Successful and failed
+/// `with_session` calls both remove their entry so idle processes do not retain models.
 static SESSION_CACHE: Mutex<Option<HashMap<(String, String), Session>>> = Mutex::new(None);
 
 static DETECTED_VRAM: LazyLock<Option<u64>> = LazyLock::new(|| {
@@ -221,9 +223,12 @@ where
         }
     };
 
-    // Steal doomed sessions *before* unlock so no concurrent caller can reuse a
-    // just-failed (possibly OOM'd / half-dead DirectML) Session. Drop runs after
-    // unlock so multi-GB teardown does not block the cache mutex.
+    // Always release after the closure returns so a finished generation does not
+    // pin multi-GB DirectML/ORT resources until EP switch / process exit.
+    // Steal *before* unlock so no concurrent caller reuses a doomed session;
+    // Drop runs after unlock so teardown does not block the cache mutex.
+    // Batch (roadmap): process many images inside one `with_session` closure so
+    // the session stays loaded for the whole batch, then drops once at the end.
     match &result {
         Err(err) if is_likely_oom(err) => {
             log::warn!(
@@ -233,26 +238,43 @@ where
             drop(guard);
             discard_sessions_and_trim(all);
         }
-        Err(err) => {
-            log::warn!("inference failed; dropping cached session {key:?}: {err}");
-            let one = {
-                let cache = guard.get_or_insert_with(HashMap::new);
-                let s = cache.remove(&key);
-                if cache.is_empty() {
-                    *guard = None;
-                }
-                s
-            };
+        other => {
+            if let Err(err) = other {
+                log::warn!("inference failed; dropping cached session {key:?}: {err}");
+            }
+            let one = take_cached_session(&mut guard, &key);
             drop(guard);
-            // Any destroyed multi-GB session should trim WS, not only OOM.
             discard_sessions_and_trim(one);
-        }
-        Ok(_) => {
-            drop(guard);
         }
     }
 
     result
+}
+
+/// Remove `key` from the map (and clear it if empty). Caller drops outside the lock.
+fn take_cached_session(
+    guard: &mut Option<HashMap<(String, String), Session>>,
+    key: &(String, String),
+) -> Option<Session> {
+    let Some(cache) = guard.as_mut() else {
+        return None;
+    };
+    let session = cache.remove(key);
+    if cache.is_empty() {
+        *guard = None;
+    }
+    session
+}
+
+/// Test-only: leave a live session under `key` without going through `with_session`
+/// (which unloads on return). Used to exercise multi-key OOM wipe.
+#[cfg(test)]
+fn insert_session_for_test(model_id: &str, ep: &str, session: Session) {
+    let key = (model_id.to_string(), ep.to_string());
+    let mut guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    guard
+        .get_or_insert_with(HashMap::new)
+        .insert(key, session);
 }
 
 pub fn run(session: &mut Session, input: &Array4<f32>) -> Result<ndarray::ArrayD<f32>, AppError> {
@@ -362,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn session_cache_keyed_by_model_and_ep() {
+    fn with_session_accepts_distinct_model_keys() {
         let _ = invalidate_all_sessions();
         let r1 = with_session("u2netp", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |session| {
             Ok(session.inputs().len())
@@ -376,6 +398,63 @@ mod tests {
         assert_eq!(r1.unwrap(), 1);
         assert_eq!(r2.unwrap(), 1);
         assert_eq!(r3.unwrap(), 1);
+    }
+
+    #[test]
+    fn successful_run_drops_cached_session() {
+        let _ = invalidate_all_sessions();
+        let mut loads = 0usize;
+
+        with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                loads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |session| Ok(session.inputs().len()),
+        )
+        .unwrap();
+        assert_eq!(loads, 1);
+
+        // Success path must release the session so the next generation reloads.
+        with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                loads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |session| Ok(session.inputs().len()),
+        )
+        .unwrap();
+        assert_eq!(loads, 2);
+    }
+
+    #[test]
+    fn multi_run_inside_one_with_session_loads_once() {
+        // Batch roadmap: keep the session for many images by looping inside the
+        // closure; load_bytes runs once, then session drops when the closure ends.
+        let _ = invalidate_all_sessions();
+        let mut loads = 0usize;
+        let runs = with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                loads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |session| {
+                let mut n = 0;
+                for _ in 0..3 {
+                    n += session.inputs().len();
+                }
+                Ok(n)
+            },
+        )
+        .unwrap();
+        assert_eq!(runs, 3);
+        assert_eq!(loads, 1);
     }
 
     #[test]
@@ -430,15 +509,12 @@ mod tests {
     fn oom_run_clears_all_cached_sessions() {
         let _ = invalidate_all_sessions();
 
-        // Populate two sessions.
-        with_session("u2netp", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |s| {
-            Ok(s.inputs().len())
-        })
-        .unwrap();
-        with_session("other", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |s| {
-            Ok(s.inputs().len())
-        })
-        .unwrap();
+        // Success-path unload empties the map after each with_session, so seed a
+        // second live key via the test inject. During the OOM with_session, both
+        // "other" and "u2netp" are present; guard.take() must wipe both.
+        // If OOM only removed the active key, "other" would stay and reloads==0.
+        let other = load_session_from_bytes(U2NETP_MODEL_BYTES, EP_CPU).unwrap();
+        insert_session_for_test("other", EP_CPU, other);
 
         let mut reloads = 0usize;
         let oom: Result<(), AppError> = with_session(
@@ -453,7 +529,6 @@ mod tests {
         );
         assert!(oom.is_err());
 
-        // Both keys must have been cleared; loading either requires a new load_bytes call.
         with_session(
             "other",
             EP_CPU,
@@ -464,7 +539,10 @@ mod tests {
             |s| Ok(s.inputs().len()),
         )
         .unwrap();
-        assert_eq!(reloads, 1);
+        assert_eq!(
+            reloads, 1,
+            "OOM must wipe sibling sessions, not only the failing key"
+        );
     }
 
     #[test]

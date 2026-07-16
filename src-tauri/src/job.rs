@@ -109,7 +109,7 @@ fn run_inner(
     let ep = (deps.execution_provider)()?;
     // Scope so the preprocess tensor (~12 MiB at 1024²) is dropped before
     // postprocess on success. Multi-GB pressure is the ORT session, released
-    // inside with_session on error — not this ndarray.
+    // inside with_session when the infer closure returns (success or error).
     let output = {
         let tensor = tensor;
         match (deps.run_inference)(&job.model_id, &ep, &tensor) {
