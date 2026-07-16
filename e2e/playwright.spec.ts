@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { MODEL_REGISTRY } from "../src/lib/models";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +32,23 @@ const DEFAULT_CONFIG = {
     downloaded: m.bundled,
   })),
 };
+
+const E2E_FIXTURE_PATH = "/swiftmask/e2e/fixtures/sample.png";
+
+async function bootAndLoadFixture(page: Page) {
+  await page.goto("/");
+  await expect(page.getByText("Drop an image here")).toBeVisible();
+
+  await page.evaluate((fixturePath) => {
+    const hook = window.__swiftmaskInjectDrop;
+    if (!hook) {
+      throw new Error("E2E drop hook not available");
+    }
+    hook([fixturePath]);
+  }, E2E_FIXTURE_PATH);
+
+  await expect(page.getByRole("button", { name: /process/i })).toBeEnabled();
+}
 
 test.describe("SwiftMask", () => {
   test.beforeEach(async ({ page }) => {
@@ -106,6 +123,61 @@ test.describe("SwiftMask", () => {
     expect(size.height).toBeGreaterThan(0);
   });
 
+  test("Ctrl+Enter starts process", async ({ page }) => {
+    await bootAndLoadFixture(page);
+
+    const expectedOutputPath = "/swiftmask/e2e/output/sample-nobg-u2netp.png";
+
+    await page.keyboard.press("Control+Enter");
+
+    await expect
+      .poll(
+        async () => {
+          const calls = await page.evaluate(() => {
+            const state = window.__SWIFTMASK_MOCK__;
+            if (!state) {
+              throw new Error("SwiftMask mock state not available");
+            }
+            return state.calls;
+          });
+          return calls.some(
+            (call) =>
+              call.cmd === "remove_image_background" &&
+              JSON.stringify(call.args).includes(expectedOutputPath),
+          );
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
+  test("Escape cancels while processing", async ({ page }) => {
+    await bootAndLoadFixture(page);
+
+    await page.keyboard.press("Control+Enter");
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.keyboard.press("Escape");
+
+    await expect
+      .poll(
+        async () => {
+          const calls = await page.evaluate(() => {
+            const state = window.__SWIFTMASK_MOCK__;
+            if (!state) {
+              throw new Error("SwiftMask mock state not available");
+            }
+            return state.calls;
+          });
+          return calls.some((call) => call.cmd === "cancel_inference");
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
   test("NC license modal gates first RMBG download", async ({ page }) => {
     await page.goto("/");
 
@@ -131,9 +203,7 @@ test.describe("SwiftMask", () => {
     await balancedPlusRow.getByRole("button", { name: "Download" }).click();
     await expect(ncDialog).toBeVisible();
 
-    await ncDialog
-      .getByRole("button", { name: "I understand" })
-      .click();
+    await ncDialog.getByRole("button", { name: "I understand" }).click();
     await expect(ncDialog).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Downloading Balanced+" }),

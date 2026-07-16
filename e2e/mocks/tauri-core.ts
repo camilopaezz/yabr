@@ -141,6 +141,21 @@ export function listen<T>(
   });
 }
 
+const blobUrlCache = new Map<string, string>();
+
 export function convertFileSrc(filePath: string, _protocol?: string): string {
+  const state = getMockState();
+  if (
+    state.fixtureBytes.length > 0 &&
+    /\.(png|jpe?g|webp|bmp)$/i.test(filePath)
+  ) {
+    let cached = blobUrlCache.get(filePath);
+    if (!cached) {
+      const blob = new Blob([state.fixtureBytes], { type: "image/png" });
+      cached = URL.createObjectURL(blob);
+      blobUrlCache.set(filePath, cached);
+    }
+    return cached;
+  }
   return `file://${filePath}`;
 }
