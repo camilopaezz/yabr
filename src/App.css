@@ -22,6 +22,7 @@
   );
   --accent-fg: var(--floral-white);
   --danger: #b42318;
+  --warn: #8a6d3b;
   --radius: 8px;
   --rail-width: 300px;
   --titlebar-height: 40px;
@@ -56,6 +57,7 @@
   );
   --_dark-accent-fg: var(--floral-white);
   --_dark-danger: #f2a39a;
+  --_dark-warn: #c9a86c;
   --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   --_dark-checkerboard-bg: color-mix(
     in srgb,
@@ -94,6 +96,7 @@
     --accent-hover: var(--_dark-accent-hover);
     --accent-fg: var(--_dark-accent-fg);
     --danger: var(--_dark-danger);
+    --warn: var(--_dark-warn);
     --shadow: var(--_dark-shadow);
     --checkerboard-bg: var(--_dark-checkerboard-bg);
     --checkerboard-tile: var(--_dark-checkerboard-tile);
@@ -114,6 +117,7 @@
   --accent-hover: var(--_dark-accent-hover);
   --accent-fg: var(--_dark-accent-fg);
   --danger: var(--_dark-danger);
+  --warn: var(--_dark-warn);
   --shadow: var(--_dark-shadow);
   --checkerboard-bg: var(--_dark-checkerboard-bg);
   --checkerboard-tile: var(--_dark-checkerboard-tile);
@@ -481,9 +485,12 @@ button.titlebar-close:hover:not(:disabled) {
 }
 
 .mode-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
   align-items: center;
-  gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -538,18 +545,14 @@ button.titlebar-close:hover:not(:disabled) {
 }
 
 .mode-option-name {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
 }
 
 .mode-option-badge {
   font-size: 0.72rem;
   color: var(--fg-muted);
-  flex-shrink: 0;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   transition:
     color var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out);
@@ -560,10 +563,26 @@ button.titlebar-close:hover:not(:disabled) {
   opacity: 1;
 }
 
+.mode-option-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+}
+
 .mode-option-model {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.68rem;
   opacity: 0.85;
+}
+
+.mode-option-badge.mode-option-nc {
+  color: var(--warn);
+  font-size: 0.68rem;
+  white-space: nowrap;
 }
 
 button.mode-option-download {
@@ -576,10 +595,9 @@ button.mode-option-download {
   font-size: 0.72rem;
   color: var(--accent);
   cursor: pointer;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
   transition:
     color var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out),
@@ -601,6 +619,9 @@ button.mode-option-download:disabled {
 }
 
 .mode-option input {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
   width: auto;
   margin: 0;
   accent-color: var(--accent);
@@ -1083,11 +1104,83 @@ body.is-slider-dragging * {
   width: 100%;
 }
 
+.nc-license-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 260;
+  padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.nc-license-modal-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.nc-license-modal-card {
+  width: min(420px, 100%);
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.nc-license-modal-card.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.nc-license-modal-card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.nc-license-modal-summary,
+.nc-license-modal-hint {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.nc-license-modal-license {
+  margin: 0 0 16px;
+  font-size: 0.85rem;
+}
+
+.nc-license-modal-license a {
+  color: var(--warn);
+}
+
+.nc-license-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.nc-license-modal-actions button {
+  flex: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
   .modal-card,
   .download-modal-backdrop,
   .download-modal-card,
+  .nc-license-modal-backdrop,
+  .nc-license-modal-card,
   .mode-option,
   .mode-option-badge,
   button.mode-option-download {
@@ -1100,7 +1193,9 @@ body.is-slider-dragging * {
   .modal-backdrop.is-open,
   .modal-card.is-open,
   .download-modal-backdrop.is-open,
-  .download-modal-card.is-open {
+  .download-modal-card.is-open,
+  .nc-license-modal-backdrop.is-open,
+  .nc-license-modal-card.is-open {
     opacity: 1;
     transform: none;
   }

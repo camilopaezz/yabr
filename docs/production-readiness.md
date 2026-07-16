@@ -24,6 +24,7 @@ The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Vers
 - CI (`.github/workflows/ci.yml`): Biome lint, Vitest, `gen:models:check`, `cargo test`,
   release builds on `ubuntu-24.04` (AppImage) + `windows-latest` (NSIS); artifacts retained 14 days
 - **Mocked** Playwright E2E on every push/PR to `main` (UI wiring smoke only — see §2.2)
+- NC license modal gates first Balanced+ / Max Quality download; persistent ack in `localStorage`; **Non-commercial** badge on ready RMBG modes
 - README with dev setup, scripts, and commercial-use guidance for model licenses
 
 ---
@@ -53,7 +54,7 @@ CI runs two different kinds of “end-to-end” verification. Only one is in pla
 | Layer | What it proves | Status |
 |-------|----------------|--------|
 | **Rust smoke** (`cargo test`, `smoke_inference.rs`) | ONNX inference + mask IoU on CPU | ✅ every PR |
-| **Mocked UI E2E** (`e2e/playwright.spec.ts`, `VITE_E2E=1`) | React wiring: drop → Process → events → “Done” + preview | ✅ every PR |
+| **Mocked UI E2E** (`e2e/playwright.spec.ts`, `VITE_E2E=1`) | React wiring: drop → Process → events → “Done” + preview; NC license modal gates first RMBG download | ✅ every PR |
 | **Real desktop E2E** (Tauri WebDriver) | Shipped binary: native drop → real `remove_image_background` → output file on disk | ❌ not wired |
 
 **Mocked UI E2E (done)** — runs on every push/PR to `main` after lint (see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). Playwright drives Chromium against the Vite dev server; `@tauri-apps/*` is swapped for `e2e/mocks/`. No Rust process, no ONNX, no installer. Catches UI regressions in the happy path only.
@@ -80,7 +81,9 @@ Many failures only reach `console.error` — model list failures, download failu
 
 ### 2.5 License disclosure in the UI
 
-README explains CC BY-NC for Balanced+ and Max Quality, but those modes do not warn in-app before download or selection. For a public release, add a one-time acknowledgment or a visible badge + link to reduce legal and reputational risk.
+**Done (0.9):** one-time NC license modal before the first Balanced+ / Max Quality download, with CC BY-NC 4.0 link and commercial-use guidance; **Non-commercial** badge on downloaded RMBG modes. Covered by Playwright E2E (`NC license modal gates first RMBG download`).
+
+**Still missing for 1.0:** About / licenses panel (MIT app + per-model attributions).
 
 ### 2.6 Edge cases real users will hit
 
@@ -116,7 +119,7 @@ Zero telemetry matches the product promise; **local logs** give support without 
 1. GitHub Releases workflow
 2. ~~Mocked UI E2E on every PR~~ ✅ (does **not** substitute for real desktop E2E)
 3. AppImage smoke test on clean Linux
-4. In-app error surfacing + NC license notice for RMBG modes
+4. In-app error surfacing ~~+ NC license notice for RMBG modes~~ (NC notice ✅)
 5. Screenshots + install troubleshooting in README
 
 ### 1.0
@@ -152,8 +155,8 @@ Use this as a trackable backlog; check items off as they ship.
 
 ### Distribution
 
-- [ ] GitHub Releases workflow (tag → NSIS + AppImage upload)
-- [ ] `CHANGELOG` / release notes per version
+- [x] GitHub Releases workflow (tag → NSIS + AppImage upload)
+- [x] `CHANGELOG` / release notes per version
 - [ ] `tauri-plugin-updater` + signing key in CI secrets
 - [ ] User README: download links, screenshots, install troubleshooting
 - [ ] AppImage rpath fix (`.cargo/config.toml`)
@@ -168,8 +171,8 @@ Use this as a trackable backlog; check items off as they ship.
 **Frontend — mocked (proves UI wiring only; 0.9)**
 
 - [x] Mocked Playwright E2E on every PR to `main` (`VITE_E2E=1`, no Tauri/Rust)
-- Covers: boot → inject drop → Process → `remove_image_background` invoked → “Done” → preview image visible
-- Does **not** cover: real IPC, inference, overwrite dialog, download, settings, first-run benchmark
+- Covers: boot → inject drop → Process → `remove_image_background` invoked → “Done” → preview image visible; NC license modal gates first RMBG download (Cancel / accept → download starts)
+- Does **not** cover: real IPC, inference, overwrite dialog, full download flow, settings, first-run benchmark
 
 **Frontend — real desktop (proves shipped app works; 1.0)**
 
@@ -185,7 +188,7 @@ Use this as a trackable backlog; check items off as they ship.
 
 ### Legal / trust
 
-- [ ] In-app NC license notice before first RMBG download or mode select
+- [x] In-app NC license notice before first RMBG download (modal + persistent ack; badge on ready RMBG modes)
 - [ ] About / licenses panel (MIT app + per-model terms)
 
 ### Support
