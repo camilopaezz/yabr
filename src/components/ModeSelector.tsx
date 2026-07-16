@@ -343,8 +343,9 @@ export function ModeSelector() {
               type="button"
               onClick={handleCancel}
               disabled={cancelling}
+              aria-disabled={cancelling}
             >
-              Cancel
+              {cancelling ? "Cancelling…" : "Cancel"}
             </button>
           </div>
         </div>

@@ -30,7 +30,7 @@ export type StartProcessDeps = {
 };
 
 export type CancelDeps = {
-  cancelInference: () => Promise<void>;
+  cancelInference: (jobId: string) => Promise<void>;
 };
 
 export type StartProcessResult =
@@ -45,9 +45,25 @@ const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "bmp"]);
 /** True while overwrite confirm / start handoff is in flight (before status is processing). */
 let processGate = false;
 
+/**
+ * Backend job id for the active run (UUID per Process click — not the image id).
+ * Events are keyed on this so cancel → re-run cannot clobber the new job.
+ */
+let activeRunId: string | null = null;
+
+/** Run ids the user cancelled; late done/error/progress for these are ignored. */
+const discardedRunIds = new Set<string>();
+
 /** Test-only: clear gate left open by aborted/timed-out startProcess. */
 export function resetProcessGateForTests(): void {
   processGate = false;
+  activeRunId = null;
+  discardedRunIds.clear();
+}
+
+/** Test-only: bind event handlers to a run id without going through startProcess. */
+export function setActiveRunIdForTests(runId: string | null): void {
+  activeRunId = runId;
 }
 
 function getExtension(path: string): string {
@@ -57,6 +73,18 @@ function getExtension(path: string): string {
 
 function isImageFile(path: string): boolean {
   return IMAGE_EXTENSIONS.has(getExtension(path));
+}
+
+function isDiscardedRun(runId: string): boolean {
+  return discardedRunIds.has(runId);
+}
+
+/** Whether this event belongs to the run we still care about. */
+function isCurrentRunEvent(runId: string): boolean {
+  if (isDiscardedRun(runId)) return false;
+  if (activeRunId !== null) return runId === activeRunId;
+  // Tests that never call startProcess still key events on the image id.
+  return true;
 }
 
 /** Domain busy: backend processing or overwrite/start handoff in flight. */
@@ -149,6 +177,9 @@ export async function startProcess(
       settings.mode,
     );
 
+    // Per-run id so late events from a cancelled attempt cannot match a re-run.
+    const runId = crypto.randomUUID();
+    activeRunId = runId;
     imageStore.getState().patch({
       status: "processing",
       progress: 0,
@@ -159,13 +190,17 @@ export async function startProcess(
 
     try {
       await deps.removeBackground({
-        id: latest.id,
+        id: runId,
         inputPath: latest.inputPath,
         outputPath: finalOutputPath,
         modelId: settings.mode,
       });
       return "started";
     } catch {
+      // e.g. backend "already processing" — do not leave status stuck on processing.
+      if (activeRunId === runId) {
+        activeRunId = null;
+      }
       const still = imageStore.getState().current;
       if (still?.id === startedId && still.status === "processing") {
         imageStore.getState().patch({
@@ -182,7 +217,19 @@ export async function startProcess(
 }
 
 export function cancelProcess(deps: CancelDeps): void {
-  deps.cancelInference().catch(() => {});
+  const current = imageStore.getState().current;
+  if (current?.status !== "processing") return;
+
+  const runId = activeRunId ?? current.id;
+  discardedRunIds.add(runId);
+  activeRunId = null;
+  deps.cancelInference(runId).catch(() => {});
+  imageStore.getState().patch({
+    status: "cancelled",
+    progress: 0,
+    stage: null,
+    error: null,
+  });
 }
 
 /** Returns false if clear was rejected because a process is busy. */
@@ -197,8 +244,15 @@ export function applyProgress(payload: {
   stage: string;
   pct: number;
 }): void {
+  if (isDiscardedRun(payload.id)) return;
   const current = imageStore.getState().current;
-  if (!current || current.id !== payload.id) return;
+  if (!current) return;
+  // Prefer active run id; fall back to image id for tests that skip startProcess.
+  if (activeRunId !== null) {
+    if (payload.id !== activeRunId) return;
+  } else if (current.id !== payload.id) {
+    return;
+  }
   // Do not resurrect done/error/ready via late progress events.
   if (current.status !== "processing") return;
   imageStore.getState().patch({
@@ -208,20 +262,37 @@ export function applyProgress(payload: {
   });
 }
 
-export function applyDone(payload: InferenceDonePayload): void {
+/** @returns true if the done event was applied to image state. */
+export function applyDone(payload: InferenceDonePayload): boolean {
+  if (isDiscardedRun(payload.id)) {
+    discardedRunIds.delete(payload.id);
+    return false;
+  }
+  if (!isCurrentRunEvent(payload.id)) return false;
   const current = imageStore.getState().current;
-  if (!current || current.id !== payload.id) return;
+  if (!current) return false;
+  if (activeRunId === null && current.id !== payload.id) return false;
+  if (current.status === "cancelled") return false;
   imageStore.getState().patch({
     status: "done",
     progress: 100,
     stage: null,
     outputPath: payload.output_path,
   });
+  return true;
 }
 
 export function applyError(payload: { id: string; message: string }): void {
+  if (isDiscardedRun(payload.id)) {
+    discardedRunIds.delete(payload.id);
+    return;
+  }
+  if (!isCurrentRunEvent(payload.id)) return;
   const current = imageStore.getState().current;
-  if (!current || current.id !== payload.id) return;
+  if (!current) return;
+  if (activeRunId === null && current.id !== payload.id) return;
+  // Optimistic cancel already applied; ignore late cancelled/error for same job.
+  if (current.status === "cancelled") return;
   const status = payload.message === "cancelled" ? "cancelled" : "error";
   imageStore.getState().patch({
     status,
@@ -239,9 +310,10 @@ export async function initCurrentImageListeners(): Promise<() => void> {
 
   const unsubscribeDone = await listenInferenceDone(
     (payload: InferenceDonePayload) => {
-      applyDone(payload);
-      // Always record last successful job timings for Settings debug meta.
-      settingsStore.getState().setLastJobTimings(payload.timings);
+      // Only record timings when the UI actually accepted the done event.
+      if (applyDone(payload)) {
+        settingsStore.getState().setLastJobTimings(payload.timings);
+      }
     },
   );
 

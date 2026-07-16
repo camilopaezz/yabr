@@ -11,6 +11,7 @@ import {
   initCurrentImageListeners,
   isProcessBusy,
   resetProcessGateForTests,
+  setActiveRunIdForTests,
   type StartProcessDeps,
   startProcess,
   syncOutputPath,
@@ -214,12 +215,21 @@ describe("currentImage", () => {
       });
       const result = await startProcess(deps);
       expect(result).toBe("started");
-      expect(removeBackground).toHaveBeenCalledWith({
-        id: "job-9",
-        inputPath: "/home/user/pic.jpg",
-        outputPath: "/exports/pic-nobg-rmbg-2.0.png",
-        modelId: "rmbg-2.0",
-      });
+      expect(removeBackground).toHaveBeenCalledTimes(1);
+      const job = removeBackground.mock.calls[0]?.[0] as {
+        id: string;
+        inputPath: string;
+        outputPath: string;
+        modelId: string;
+      };
+      // Per-run UUID — distinct from the image item id.
+      expect(job.id).not.toBe("job-9");
+      expect(job.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(job.inputPath).toBe("/home/user/pic.jpg");
+      expect(job.outputPath).toBe("/exports/pic-nobg-rmbg-2.0.png");
+      expect(job.modelId).toBe("rmbg-2.0");
       expect(imageStore.getState().current?.status).toBe("processing");
       expect(imageStore.getState().current?.stage).toBe("starting");
       expect(imageStore.getState().current?.outputPath).toBe(
@@ -308,9 +318,40 @@ describe("currentImage", () => {
 
   describe("cancelProcess / clearCurrent", () => {
     it("fires cancelInference without awaiting", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-cancel-fire" }),
+        status: "processing",
+      });
+      setActiveRunIdForTests("run-fire");
+      const cancelInference = vi.fn().mockResolvedValue(undefined);
+      cancelProcess({ cancelInference });
+      expect(cancelInference).toHaveBeenCalledWith("run-fire");
+    });
+
+    it("optimistically sets cancelled while processing", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-cancel" }),
+        status: "processing",
+        progress: 40,
+        stage: "inferring",
+      });
       const cancelInference = vi.fn().mockResolvedValue(undefined);
       cancelProcess({ cancelInference });
       expect(cancelInference).toHaveBeenCalled();
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("cancelled");
+      expect(current?.progress).toBe(0);
+      expect(current?.stage).toBeNull();
+      expect(current?.error).toBeNull();
+    });
+
+    it("does not patch when not processing", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-ready" }),
+        status: "ready",
+      });
+      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      expect(imageStore.getState().current?.status).toBe("ready");
     });
 
     it("clears the current image when idle", () => {
@@ -426,6 +467,99 @@ describe("currentImage", () => {
       expect(current?.status).toBe("cancelled");
       expect(current?.error).toBeNull();
       expect(current?.stage).toBeNull();
+    });
+
+    it("ignores late done after optimistic cancel for that job id", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-late" }),
+        status: "processing",
+        progress: 90,
+        stage: "encoding",
+      });
+      setActiveRunIdForTests("run-late");
+      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      expect(imageStore.getState().current?.status).toBe("cancelled");
+
+      applyDone({
+        id: "run-late",
+        output_path: "/tmp/should-not-apply.png",
+        timings: { stages: [], total_seconds: 1 },
+      });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("cancelled");
+      expect(current?.outputPath).not.toBe("/tmp/should-not-apply.png");
+      expect(current?.progress).toBe(0);
+    });
+
+    it("ignores late error after optimistic cancel for that job id", () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-late-err" }),
+        status: "processing",
+      });
+      setActiveRunIdForTests("run-late-err");
+      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      applyError({ id: "run-late-err", message: "cancelled" });
+      applyError({ id: "run-late-err", message: "out of memory" });
+      const current = imageStore.getState().current;
+      expect(current?.status).toBe("cancelled");
+      expect(current?.error).toBeNull();
+    });
+
+    it("does not let a cancelled run clobber a new run of the same image", async () => {
+      const item = makeReadyItem({ id: "img-rerun" });
+      imageStore.getState().set(item);
+
+      let resolveFirst: (() => void) | undefined;
+      const firstDone = new Promise<void>((r) => {
+        resolveFirst = r;
+      });
+      let call = 0;
+      const removeBackground = vi.fn(async (job: { id: string }) => {
+        call += 1;
+        if (call === 1) {
+          await firstDone;
+          return;
+        }
+        // Second run stays open; we only care that late first events are ignored.
+        void job;
+      });
+      const deps: StartProcessDeps = {
+        exists: vi.fn().mockResolvedValue(false),
+        ask: vi.fn(),
+        removeBackground,
+        getSettings: () => ({ mode: "u2netp", outputDir: null }),
+      };
+
+      const first = startProcess(deps);
+      // Let startProcess set processing + activeRunId
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(imageStore.getState().current?.status).toBe("processing");
+      const firstRunId = removeBackground.mock.calls[0]?.[0]?.id as string;
+      expect(firstRunId).toBeTruthy();
+
+      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      expect(imageStore.getState().current?.status).toBe("cancelled");
+      resolveFirst?.();
+      await first;
+
+      // New run on same image
+      const second = startProcess({
+        ...deps,
+        removeBackground: vi.fn().mockImplementation(async (job: { id: string }) => {
+          // Late events from the first run must not cancel this job.
+          applyDone({
+            id: firstRunId,
+            output_path: "/tmp/stale.png",
+            timings: { stages: [], total_seconds: 0 },
+          });
+          applyError({ id: firstRunId, message: "cancelled" });
+          expect(imageStore.getState().current?.status).toBe("processing");
+          expect(job.id).not.toBe(firstRunId);
+        }),
+      });
+      await second;
+      expect(imageStore.getState().current?.status).toBe("processing");
     });
   });
 

@@ -1,5 +1,5 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   cancelProcess,
   prodCancelDeps,
@@ -29,12 +29,22 @@ function statusLabel(item: ImageItem): string {
 export function ImagePanel() {
   const current = useImageStore((state) => state.current);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const cancellingRef = useRef(false);
 
   const isProcessing = current?.status === "processing";
   const busy = Boolean(isProcessing || starting);
   const hasImage = Boolean(current);
   const isDone = current?.status === "done";
   const canShowInFolder = isDone && Boolean(current?.outputPath);
+
+  // Clear cancel chrome when we leave processing (optimistic cancel included).
+  useEffect(() => {
+    if (!isProcessing) {
+      cancellingRef.current = false;
+      setCancelling(false);
+    }
+  }, [isProcessing]);
 
   const handleProcess = async () => {
     if (busy || !current) return;
@@ -47,7 +57,12 @@ export function ImagePanel() {
   };
 
   const handleCancel = () => {
+    if (cancellingRef.current || !isProcessing) return;
+    cancellingRef.current = true;
+    setCancelling(true);
     cancelProcess(prodCancelDeps());
+    // Optimistic cancel ends "processing"; do not show Process as "Starting…".
+    setStarting(false);
   };
 
   const handleShowInFolder = async () => {
@@ -105,8 +120,10 @@ export function ImagePanel() {
             className="btn-primary"
             title="Cancel (Esc)"
             onClick={handleCancel}
+            disabled={cancelling}
+            aria-disabled={cancelling}
           >
-            Cancel
+            {cancelling ? "Cancelling…" : "Cancel"}
           </button>
         )}
       </div>
