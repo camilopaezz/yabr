@@ -43,9 +43,17 @@ export type InferenceErrorPayload = {
   message: string;
 };
 
+export type InferenceFallbackPayload = {
+  id: string;
+  reason: string;
+  from_ep: string;
+  to_ep: string;
+};
+
 export const EVENT_PROGRESS = "inference:progress";
 export const EVENT_DONE = "inference:done";
 export const EVENT_ERROR = "inference:error";
+export const EVENT_FALLBACK = "inference:fallback";
 export const EVENT_MODEL_DOWNLOAD = "model:download";
 
 export type GpuInfo = {
@@ -158,6 +166,14 @@ export function listenInferenceError(
   handler: (payload: InferenceErrorPayload) => void,
 ): Promise<() => void> {
   return tauriListen<InferenceErrorPayload>(EVENT_ERROR, (event) =>
+    handler(event.payload),
+  );
+}
+
+export function listenInferenceFallback(
+  handler: (payload: InferenceFallbackPayload) => void,
+): Promise<() => void> {
+  return tauriListen<InferenceFallbackPayload>(EVENT_FALLBACK, (event) =>
     handler(event.payload),
   );
 }

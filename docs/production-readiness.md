@@ -77,7 +77,7 @@ Many failures only reach `console.error` — model list failures, download failu
 
 - Clear inline errors (not only `Error: …` in the rail footer)
 - Actionable copy for common cases: missing GPU drivers, disk full, network down during download, corrupt model
-- **GPU OOM fallback** — listed in plan §13 risks but not implemented; low-VRAM users picking Max Quality will hit hard failures
+- **GPU OOM fallback** — backend automatic GPU→CPU retry + `inference:fallback` event shipped; in-app user notice still pending (see §1.0)
 
 ### 2.5 License disclosure in the UI
 
@@ -182,7 +182,7 @@ Use this as a trackable backlog; check items off as they ship.
 ### Reliability
 
 - [ ] User-visible errors for model list / download / process / reveal-in-folder
-- [ ] GPU OOM detection → CPU fallback + notice
+- [ ] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; UI notice pending)
 - [ ] Backend download cancel (if UI cancel is kept)
 - [ ] Large-image guard or clear “may fail” messaging
 

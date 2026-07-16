@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use ndarray::{Array4, ArrayD};
+
 use crate::error::AppError;
 use crate::events::{JobTimings, StageTiming};
 use crate::processing::ProcessingState;
@@ -17,13 +19,20 @@ pub trait JobSink {
     fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError>;
     fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError>;
     fn on_error(&self, message: &str);
+    fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError>;
 }
 
 pub struct JobDeps<'a> {
     pub sink: &'a dyn JobSink,
     pub execution_provider: &'a dyn Fn() -> Result<String, AppError>,
     pub model_is_ready: &'a dyn Fn(&crate::models::ModelEntry) -> Result<bool, AppError>,
-    pub load_model_bytes: &'a dyn Fn(&crate::models::ModelEntry) -> Result<Vec<u8>, AppError>,
+    /// Session load + forward pass. Implementations must load the model for `ep`
+    /// (e.g. via `with_session`) so load-time OOM still participates in GPU→CPU fallback.
+    pub run_inference: &'a dyn Fn(&str, &str, &Array4<f32>) -> Result<ArrayD<f32>, AppError>,
+}
+
+fn ep_is_cpu(ep: &str) -> bool {
+    ep.eq_ignore_ascii_case(crate::inference::EP_CPU)
 }
 
 struct StageTimer {
@@ -96,21 +105,43 @@ fn run_inner(
 
     deps.sink.on_progress("inferring", 50.0)?;
     state.check_cancel()?;
-    let timer = StageTimer::start("inferring");
+    let timer_infer = StageTimer::start("inferring");
     let ep = (deps.execution_provider)()?;
     // Scope so the preprocess tensor (~12 MiB at 1024²) is dropped before
     // postprocess on success. Multi-GB pressure is the ORT session, released
     // inside with_session on error — not this ndarray.
     let output = {
         let tensor = tensor;
-        crate::inference::with_session(
-            &job.model_id,
-            &ep,
-            || (deps.load_model_bytes)(model),
-            |session| crate::inference::run(session, &tensor),
-        )?
+        match (deps.run_inference)(&job.model_id, &ep, &tensor) {
+            Ok(output) => {
+                stages.push(timer_infer.finish());
+                output
+            }
+            Err(e) if crate::inference::is_likely_oom(&e) && !ep_is_cpu(&ep) => {
+                stages.push(timer_infer.finish());
+                state.check_cancel()?;
+                deps.sink
+                    .on_fallback("oom", &ep, crate::inference::EP_CPU)?;
+                // Sink may cancel during on_fallback; re-check before progress/CPU work.
+                state.check_cancel()?;
+                log::warn!(
+                    "inference OOM on execution provider '{ep}'; retrying on {}",
+                    crate::inference::EP_CPU
+                );
+                deps.sink.on_progress("inferring-cpu", 50.0)?;
+                state.check_cancel()?;
+                let timer_cpu = StageTimer::start("inferring-cpu");
+                let output = (deps.run_inference)(
+                    &job.model_id,
+                    crate::inference::EP_CPU,
+                    &tensor,
+                )?;
+                stages.push(timer_cpu.finish());
+                output
+            }
+            Err(e) => return Err(e),
+        }
     };
-    stages.push(timer.finish());
 
     deps.sink.on_progress("postprocessing", 80.0)?;
     state.check_cancel()?;
@@ -146,6 +177,7 @@ mod tests {
         done: Mutex<Option<String>>,
         timings: Mutex<Option<JobTimings>>,
         errors: Mutex<Vec<String>>,
+        fallbacks: Mutex<Vec<(String, String, String)>>,
     }
 
     impl Recorder {
@@ -155,6 +187,7 @@ mod tests {
                 done: Mutex::new(None),
                 timings: Mutex::new(None),
                 errors: Mutex::new(Vec::new()),
+                fallbacks: Mutex::new(Vec::new()),
             }
         }
     }
@@ -176,6 +209,29 @@ mod tests {
 
         fn on_error(&self, message: &str) {
             self.errors.lock().unwrap().push(message.to_string());
+        }
+
+        fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+            self.fallbacks.lock().unwrap().push((
+                reason.to_string(),
+                from_ep.to_string(),
+                to_ep.to_string(),
+            ));
+            Ok(())
+        }
+    }
+
+    fn run_inference_with_session(
+        load: &dyn Fn(&crate::models::ModelEntry) -> Result<Vec<u8>, AppError>,
+    ) -> impl Fn(&str, &str, &Array4<f32>) -> Result<ArrayD<f32>, AppError> + '_ {
+        move |model_id, ep, tensor| {
+            let model = crate::models::find_model(model_id)?;
+            crate::inference::with_session(
+                model_id,
+                ep,
+                || load(&model),
+                |session| crate::inference::run(session, tensor),
+            )
         }
     }
 
@@ -208,11 +264,12 @@ mod tests {
             output_path: output.to_string_lossy().into(),
             model_id: "u2netp".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &recorder,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_true,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
@@ -243,6 +300,10 @@ mod tests {
         fn on_error(&self, message: &str) {
             self.inner.on_error(message);
         }
+
+        fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+            self.inner.on_fallback(reason, from_ep, to_ep)
+        }
     }
 
     #[test]
@@ -264,11 +325,12 @@ mod tests {
             output_path: output.to_string_lossy().into(),
             model_id: "u2netp".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &sink,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_true,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
@@ -293,11 +355,12 @@ mod tests {
             output_path: output.to_string_lossy().into(),
             model_id: "u2netp".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &recorder,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_true,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
@@ -323,11 +386,12 @@ mod tests {
             output_path: dir.path().join("out.png").to_string_lossy().into(),
             model_id: "isnet-general-use".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &recorder,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_false,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
@@ -361,11 +425,12 @@ mod tests {
             output_path: output.to_string_lossy().into(),
             model_id: "u2netp".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &recorder,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_true,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         run(&job, &state, &deps).expect("happy path should succeed");
@@ -420,6 +485,255 @@ mod tests {
         assert!(
             decoded.color().has_alpha(),
             "job output PNG must include an alpha channel"
+        );
+    }
+
+    fn ep_directml() -> Result<String, AppError> {
+        Ok("directml".to_string())
+    }
+
+    fn make_u2netp_job(dir: &tempfile::TempDir) -> (ProcessingJob, std::path::PathBuf) {
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.png");
+        let rgb = image::RgbImage::from_pixel(32, 32, image::Rgb([200, 100, 50]));
+        rgb.save(&input).unwrap();
+        let job = ProcessingJob {
+            id: "job-fallback".into(),
+            input_path: input.to_string_lossy().into(),
+            output_path: output.to_string_lossy().into(),
+            model_id: "u2netp".into(),
+        };
+        (job, output)
+    }
+
+    #[test]
+    fn gpu_oom_then_cpu_ok() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (job, output) = make_u2netp_job(&dir);
+        let recorder = Recorder::new();
+
+        let run_inference = |model_id: &str, ep: &str, tensor: &Array4<f32>| {
+            if ep.eq_ignore_ascii_case("directml") {
+                return Err(AppError::Inference("CUDA out of memory".into()));
+            }
+            let model = crate::models::find_model(model_id)?;
+            crate::inference::with_session(
+                model_id,
+                ep,
+                || load_u2netp(&model),
+                |session| crate::inference::run(session, tensor),
+            )
+        };
+
+        let deps = JobDeps {
+            sink: &recorder,
+            execution_provider: &ep_directml,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        run(&job, &state, &deps).expect("CPU retry should succeed");
+
+        assert_eq!(
+            recorder.fallbacks.lock().unwrap().as_slice(),
+            &[(
+                "oom".to_string(),
+                "directml".to_string(),
+                "cpu".to_string()
+            )]
+        );
+        let stages: Vec<String> = recorder
+            .progress
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(s, _)| s.clone())
+            .collect();
+        assert!(stages.contains(&"inferring-cpu".to_string()));
+        let timings = recorder.timings.lock().unwrap().clone().unwrap();
+        let timing_stages: Vec<_> = timings
+            .stages
+            .iter()
+            .map(|t| t.stage.as_str())
+            .collect();
+        assert!(timing_stages.contains(&"inferring"));
+        assert!(timing_stages.contains(&"inferring-cpu"));
+        assert!(recorder.done.lock().unwrap().is_some());
+        assert!(output.exists());
+    }
+
+    #[test]
+    fn cpu_oom_no_fallback() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (job, output) = make_u2netp_job(&dir);
+        let recorder = Recorder::new();
+
+        let run_inference = |_model_id: &str, _ep: &str, _tensor: &Array4<f32>| {
+            Err(AppError::Inference("CUDA out of memory".into()))
+        };
+
+        let deps = JobDeps {
+            sink: &recorder,
+            execution_provider: &ep_cpu,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        let err = run(&job, &state, &deps).unwrap_err();
+        assert!(matches!(err, AppError::Inference(_)));
+        assert!(recorder.fallbacks.lock().unwrap().is_empty());
+        assert!(recorder.done.lock().unwrap().is_none());
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn gpu_oom_then_cpu_fail() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (job, output) = make_u2netp_job(&dir);
+        let recorder = Recorder::new();
+        let calls = Mutex::new(0usize);
+
+        let run_inference = |_model_id: &str, ep: &str, _tensor: &Array4<f32>| {
+            let mut n = calls.lock().unwrap();
+            *n += 1;
+            if ep.eq_ignore_ascii_case("directml") {
+                return Err(AppError::Inference("CUDA out of memory".into()));
+            }
+            Err(AppError::Inference("cpu retry failed: bad_alloc".into()))
+        };
+
+        let deps = JobDeps {
+            sink: &recorder,
+            execution_provider: &ep_directml,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        let err = run(&job, &state, &deps).unwrap_err();
+        assert!(
+            matches!(&err, AppError::Inference(msg) if msg.contains("cpu retry failed")),
+            "expected final CPU error, got {:?}",
+            err
+        );
+        assert_eq!(*calls.lock().unwrap(), 2);
+        assert_eq!(
+            recorder.fallbacks.lock().unwrap().as_slice(),
+            &[(
+                "oom".to_string(),
+                "directml".to_string(),
+                "cpu".to_string()
+            )]
+        );
+        let errors = recorder.errors.lock().unwrap();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("cpu retry failed"));
+        assert!(recorder.done.lock().unwrap().is_none());
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn non_oom_error_no_fallback() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (job, output) = make_u2netp_job(&dir);
+        let recorder = Recorder::new();
+
+        let run_inference = |_model_id: &str, _ep: &str, _tensor: &Array4<f32>| {
+            Err(AppError::Inference("model produced no outputs".into()))
+        };
+
+        let deps = JobDeps {
+            sink: &recorder,
+            execution_provider: &ep_directml,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        let err = run(&job, &state, &deps).unwrap_err();
+        assert!(matches!(err, AppError::Inference(_)));
+        assert!(recorder.fallbacks.lock().unwrap().is_empty());
+        assert!(recorder.done.lock().unwrap().is_none());
+        assert!(!output.exists());
+    }
+
+    struct CancelBeforeCpuRetry {
+        state: Arc<ProcessingState>,
+        inner: Recorder,
+    }
+
+    impl JobSink for CancelBeforeCpuRetry {
+        fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError> {
+            self.inner.on_progress(stage, pct)
+        }
+
+        fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
+            self.inner.on_done(output_path, timings)
+        }
+
+        fn on_error(&self, message: &str) {
+            self.inner.on_error(message);
+        }
+
+        fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+            self.inner.on_fallback(reason, from_ep, to_ep)?;
+            self.state.cancel();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn cancel_before_cpu_retry_after_oom() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (job, output) = make_u2netp_job(&dir);
+        let sink = CancelBeforeCpuRetry {
+            state: Arc::clone(&state),
+            inner: Recorder::new(),
+        };
+        let calls = Mutex::new(0usize);
+
+        let run_inference = |model_id: &str, ep: &str, tensor: &Array4<f32>| {
+            *calls.lock().unwrap() += 1;
+            if ep.eq_ignore_ascii_case("directml") {
+                return Err(AppError::Inference("CUDA out of memory".into()));
+            }
+            // Must not be reached when cancel fires in on_fallback.
+            let model = crate::models::find_model(model_id)?;
+            crate::inference::with_session(
+                model_id,
+                ep,
+                || load_u2netp(&model),
+                |session| crate::inference::run(session, tensor),
+            )
+        };
+
+        let deps = JobDeps {
+            sink: &sink,
+            execution_provider: &ep_directml,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        let err = run(&job, &state, &deps).unwrap_err();
+        assert!(matches!(err, AppError::Cancelled));
+        assert_eq!(*calls.lock().unwrap(), 1, "CPU run_inference must not run after cancel");
+        assert_eq!(sink.inner.errors.lock().unwrap().as_slice(), ["cancelled"]);
+        assert!(sink.inner.done.lock().unwrap().is_none());
+        assert!(!output.exists());
+        let stages: Vec<_> = sink
+            .inner
+            .progress
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(s, _)| s.clone())
+            .collect();
+        assert!(
+            !stages.iter().any(|s| s == "inferring-cpu"),
+            "should not emit inferring-cpu progress after cancel in on_fallback"
         );
     }
 }
