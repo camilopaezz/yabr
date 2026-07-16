@@ -27,6 +27,8 @@ export function invoke<T>(
       return Promise.resolve(state.config.models as T);
     case "download_model":
       return simulateDownload(args?.model_id as string) as Promise<T>;
+    case "cancel_download":
+      return Promise.resolve(undefined as T);
     case "pick_output_dir":
       return Promise.resolve(state.config.config.output_dir as T);
     case "remove_image_background": {

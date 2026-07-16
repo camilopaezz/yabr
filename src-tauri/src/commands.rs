@@ -16,6 +16,7 @@ use crate::events::{
 };
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::job::{JobDeps, JobSink, ProcessingJob};
+use crate::download::DownloadState;
 use crate::models::ModelMeta;
 use crate::processing::ProcessingState;
 
@@ -116,8 +117,22 @@ pub async fn list_models(app: AppHandle) -> Result<Vec<ModelMeta>, AppError> {
 }
 
 #[tauri::command]
-pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), AppError> {
-    crate::models::download_model(&app, &model_id).await
+pub async fn download_model(
+    app: AppHandle,
+    state: State<'_, Arc<DownloadState>>,
+    model_id: String,
+) -> Result<(), AppError> {
+    crate::models::download_model(&app, state.inner(), &model_id).await
+}
+
+#[tauri::command]
+pub async fn cancel_download(state: State<'_, Arc<DownloadState>>) -> Result<(), AppError> {
+    if !state.is_busy() {
+        return Ok(());
+    }
+    state.cancel();
+    state.wait_until_idle().await;
+    Ok(())
 }
 
 #[tauri::command]

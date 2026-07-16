@@ -183,7 +183,7 @@ Use this as a trackable backlog; check items off as they ship.
 
 - [ ] User-visible errors for model list / download / process / reveal-in-folder
 - [ ] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; UI notice pending)
-- [ ] Backend download cancel (if UI cancel is kept)
+- [x] Backend download cancel (if UI cancel is kept)
 - [ ] Large-image guard or clear “may fail” messaging
 
 ### Legal / trust

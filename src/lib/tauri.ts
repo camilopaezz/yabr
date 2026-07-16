@@ -95,6 +95,10 @@ export function invokeDownloadModel(modelId: string): Promise<void> {
   return tauriInvoke("download_model", { modelId });
 }
 
+export function invokeCancelDownload(): Promise<void> {
+  return tauriInvoke("cancel_download");
+}
+
 export function listenModelDownload(
   handler: (payload: ModelDownloadPayload) => void,
 ): Promise<() => void> {
