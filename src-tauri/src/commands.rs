@@ -7,9 +7,12 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::config::Config;
 use crate::error::AppError;
+use ndarray::Array4;
+
 use crate::events::{
-    InferenceDonePayload, InferenceErrorPayload, InferenceProgressPayload, JobTimings,
-    RuntimeInfo, INFERENCE_DONE, INFERENCE_ERROR, INFERENCE_PROGRESS,
+    InferenceDonePayload, InferenceErrorPayload, InferenceFallbackPayload,
+    InferenceProgressPayload, JobTimings, RuntimeInfo, INFERENCE_DONE, INFERENCE_ERROR,
+    INFERENCE_FALLBACK, INFERENCE_PROGRESS,
 };
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::job::{JobDeps, JobSink, ProcessingJob};
@@ -56,6 +59,20 @@ impl JobSink for AppJobSink {
                 message: message.to_string(),
             },
         );
+    }
+
+    fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+        self.app
+            .emit(
+                INFERENCE_FALLBACK,
+                InferenceFallbackPayload {
+                    id: self.id.clone(),
+                    reason: reason.to_string(),
+                    from_ep: from_ep.to_string(),
+                    to_ep: to_ep.to_string(),
+                },
+            )
+            .map_err(|e| AppError::Inference(e.to_string()))
     }
 }
 
@@ -138,11 +155,20 @@ pub async fn remove_image_background(
                     )?)?)
                 }
             };
+            let run_inference = |model_id: &str, ep: &str, tensor: &Array4<f32>| {
+                let model = crate::models::find_model(model_id)?;
+                crate::inference::with_session(
+                    model_id,
+                    ep,
+                    || load_model_bytes(&model),
+                    |session| crate::inference::run(session, tensor),
+                )
+            };
             let deps = JobDeps {
                 sink: &sink,
                 execution_provider: &execution_provider,
                 model_is_ready: &model_is_ready,
-                load_model_bytes: &load_model_bytes,
+                run_inference: &run_inference,
             };
             crate::job::run(&args, &processing_state, &deps)
         }));
