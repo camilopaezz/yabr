@@ -38,6 +38,8 @@ export function invoke<T>(
     }
     case "cancel_inference":
       return Promise.resolve(undefined as T);
+    case "path_exists":
+      return Promise.resolve(false as T);
     case "get_runtime_info":
       return Promise.resolve({
         app_version: "0.1.0",

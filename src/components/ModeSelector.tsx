@@ -31,7 +31,11 @@ export function ModeSelector() {
     "download",
   );
   const [ncAckModel, setNcAckModel] = useState<ModelMeta | null>(null);
-  const isCancelledRef = useRef(false);
+  /**
+   * Bumped on each new download session or cancel. Invalidates in-flight work
+   * (progress events, mode/badge updates) without a separate cancelled flag.
+   */
+  const downloadSessionRef = useRef(0);
   const downloadPresence = useAnimatedPresence(Boolean(downloading));
   const ncAckPresence = useAnimatedPresence(Boolean(ncAckModel));
 
@@ -44,6 +48,10 @@ export function ModeSelector() {
   useEffect(() => {
     if (!downloadPresence.rendered) {
       setDisplayModel(null);
+      // Reset progress only after exit animation so the modal does not flash
+      // back to an empty "Downloading 0%" state on completion.
+      setDownloadProgress(0);
+      setDownloadStage("download");
     }
   }, [downloadPresence.rendered]);
 
@@ -74,44 +82,56 @@ export function ModeSelector() {
 
     let unsubscribe: (() => void) | undefined;
     let cleanedUp = false;
+    const modelId = downloading.id;
+    const modelMode = downloading.id as ModelMode;
+    const session = downloadSessionRef.current;
+    const isCurrentSession = () => downloadSessionRef.current === session;
 
-    listenModelDownload((payload) => {
-      if (payload.model_id === downloading.id) {
-        setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
-        if (payload.stage === "verify") {
-          setDownloadStage("verify");
-        } else {
-          setDownloadStage("download");
+    // Subscribe first, then start the transfer. Starting both in parallel can
+    // miss early progress/verify events (worse on slower Windows WebView2 IPC).
+    void (async () => {
+      try {
+        const unsub = await listenModelDownload((payload) => {
+          if (payload.model_id !== modelId) return;
+          if (!isCurrentSession()) return;
+          setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
+          setDownloadStage(payload.stage === "verify" ? "verify" : "download");
+        });
+        if (cleanedUp || !isCurrentSession()) {
+          unsub();
+          return;
         }
-      }
-    }).then((unsub) => {
-      if (!cleanedUp) {
         unsubscribe = unsub;
-      } else {
-        unsub();
-      }
-    });
 
-    invokeDownloadModel(downloading.id)
-      .then(() => {
-        if (!isCancelledRef.current) {
-          setMode(downloading.id as ModelMode);
-        }
-        invokeListModels()
-          .then(applyModels)
-          .catch((err: unknown) =>
-            console.error("failed to refresh models", err),
-          );
-      })
-      .catch((err: unknown) => {
-        console.error("download failed", err);
-      })
-      .finally(() => {
+        await invokeDownloadModel(modelId);
+        // Cancel/re-start bumps the session — ignore this completion.
+        if (!isCurrentSession()) return;
+
+        // Close the modal as soon as the backend finishes — do not wait on
+        // list_models (that left "Verifying" up while the badge already updated).
         setDownloading(null);
-        setDownloadProgress(0);
-        setDownloadStage("download");
-        isCancelledRef.current = false;
-      });
+
+        setMode(modelMode);
+        // Optimistic ready flag so the Download chip flips even if list is slow.
+        setModels((prev) =>
+          prev.map((m) => (m.id === modelId ? { ...m, downloaded: true } : m)),
+        );
+        try {
+          const list = await invokeListModels();
+          // Session still current means user did not cancel/re-start mid-refresh.
+          if (isCurrentSession()) {
+            applyModels(list);
+          }
+        } catch (err: unknown) {
+          console.error("failed to refresh models", err);
+        }
+      } catch (err: unknown) {
+        console.error("download failed", err);
+        if (isCurrentSession()) {
+          setDownloading(null);
+        }
+      }
+    })();
 
     return () => {
       cleanedUp = true;
@@ -120,7 +140,7 @@ export function ModeSelector() {
   }, [downloading, setMode]);
 
   const beginDownload = (model: ModelMeta) => {
-    isCancelledRef.current = false;
+    downloadSessionRef.current += 1;
     setDownloadProgress(0);
     setDownloadStage("download");
     setDownloading(model);
@@ -157,7 +177,8 @@ export function ModeSelector() {
   };
 
   const handleCancel = () => {
-    isCancelledRef.current = true;
+    // Invalidate in-flight session so a late success does not set mode / badge.
+    downloadSessionRef.current += 1;
     setDownloading(null);
     setDownloadProgress(0);
     setDownloadStage("download");

@@ -1188,12 +1188,14 @@ body.is-slider-dragging * {
     transition: none;
   }
 
-  .modal-backdrop,
-  .modal-card,
-  .download-modal-backdrop,
-  .download-modal-card,
-  .nc-license-modal-backdrop,
-  .nc-license-modal-card {
+  /* Only force full opacity when open — closed nodes must stay hidden or the
+     download modal can remain visible after success (stuck on "Verifying"). */
+  .modal-backdrop.is-open,
+  .modal-card.is-open,
+  .download-modal-backdrop.is-open,
+  .download-modal-card.is-open,
+  .nc-license-modal-backdrop.is-open,
+  .nc-license-modal-card.is-open {
     opacity: 1;
     transform: none;
   }

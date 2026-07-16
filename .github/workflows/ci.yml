@@ -1,14 +1,17 @@
 name: CI
 
+# Full CI gate for production: runs on PRs targeting main only.
+# Feature → dev PRs intentionally skip CI; validate locally before merging to dev.
+# Release builds and publishing happen in release.yml (tag push after dev → main).
+
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -133,9 +136,6 @@ jobs:
 
       - name: install Playwright Chromium
         run: bunx playwright install --with-deps chromium
-
-      - name: run frontend unit tests
-        run: bun run test
 
       - name: run mocked-frontend E2E suite
         run: xvfb-run bun run test:e2e

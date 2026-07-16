@@ -126,11 +126,7 @@ pub async fn remove_image_background(
                 Ok(crate::config::load_config(&app_for_ep)?.execution_provider())
             };
             let model_is_ready = |model: &crate::models::ModelEntry| {
-                if model.bundled {
-                    Ok(true)
-                } else {
-                    Ok(crate::models::model_cache_path(&app_for_ready, model)?.exists())
-                }
+                crate::models::model_is_cached(&app_for_ready, model)
             };
             let load_model_bytes = |model: &crate::models::ModelEntry| {
                 if model.bundled {
@@ -152,10 +148,19 @@ pub async fn remove_image_background(
         }));
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(_)) => {
-                // job::run already called sink.on_error
+            Ok(Err(err)) => {
+                // job::run already called sink.on_error. OOM path also drops
+                // sessions inside with_session; belt-and-suspenders here so a
+                // future error site that skips that still releases multi-GB.
+                if crate::inference::is_likely_oom(&err) {
+                    let _ = crate::inference::invalidate_all_sessions();
+                }
             }
             Err(_) => {
+                // Panic can leave the ORT/DirectML session in a bad state with
+                // committed GPU/system memory. Destroy the cache so the idle
+                // process does not keep multi-GB around.
+                let _ = crate::inference::invalidate_all_sessions();
                 let _ = app_handle.emit(
                     INFERENCE_ERROR,
                     InferenceErrorPayload {
@@ -175,6 +180,13 @@ pub async fn remove_image_background(
 pub async fn cancel_inference(state: State<'_, Arc<ProcessingState>>) -> Result<(), AppError> {
     state.cancel();
     Ok(())
+}
+
+/// Check whether a path exists using native FS (not the scoped frontend plugin).
+/// Required for overwrite prompts when the output dir is outside `$HOME` etc.
+#[tauri::command]
+pub async fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
 }
 
 #[tauri::command]

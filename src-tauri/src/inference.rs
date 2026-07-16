@@ -28,6 +28,12 @@ fn optimization_level_for_vram(vram: Option<u64>) -> GraphOptimizationLevel {
     }
 }
 
+/// DirectML requires sequential execution and no mem-pattern (ORT will error otherwise).
+/// Disabling mem-pattern also avoids holding large reserved arenas after a run.
+fn is_directml(ep: &str) -> bool {
+    ep.eq_ignore_ascii_case(EP_DIRECTML)
+}
+
 pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, AppError> {
     let mut providers: Vec<ExecutionProviderDispatch> = Vec::new();
     match ep.to_lowercase().as_str() {
@@ -48,44 +54,205 @@ pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, 
     providers.push(ort::ep::CPU::default().build());
 
     let opt_level = optimization_level_for_vram(*DETECTED_VRAM);
+    let dml = is_directml(ep);
 
-    Session::builder()
+    let mut builder = Session::builder()
         .map_err(|e| AppError::Inference(e.to_string()))?
         .with_optimization_level(opt_level)
-        .map_err(|e| AppError::Inference(e.to_string()))?
+        .map_err(|e| AppError::Inference(e.to_string()))?;
+
+    if dml {
+        // Required by DirectML EP; also reduces lingering reserved buffers.
+        builder = builder
+            .with_memory_pattern(false)
+            .map_err(|e| AppError::Inference(e.to_string()))?
+            .with_parallel_execution(false)
+            .map_err(|e| AppError::Inference(e.to_string()))?;
+    }
+
+    builder
         .with_execution_providers(providers)
         .map_err(|e| AppError::Inference(e.to_string()))?
         .commit_from_memory(model_bytes)
         .map_err(|e| AppError::Inference(e.to_string()))
 }
 
+/// Drop every cached ORT session and ask the OS to return free pages.
+///
+/// DirectML/ORT keep multi-GB of committed resources on the live `OrtSession`.
+/// After OOM (or EP switch) those sessions must be destroyed; Task Manager may
+/// still show a high working set until we trim it.
 pub fn invalidate_all_sessions() -> Result<(), AppError> {
-    let mut guard = SESSION_CACHE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    *guard = None;
+    release_all_sessions();
     Ok(())
 }
 
-pub fn with_session<F, R, L>(model_id: &str, ep: &str, load_bytes: L, f: F) -> Result<R, AppError>
+/// Take ownership of the cache so `Session` Drop runs outside the mutex.
+fn take_session_cache() -> Option<HashMap<(String, String), Session>> {
+    let mut guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    guard.take()
+}
+
+fn release_all_sessions() {
+    // Drop sessions first (frees ORT/DirectML device resources), then trim WS.
+    let stolen = take_session_cache();
+    drop(stolen);
+    trim_process_working_set();
+}
+
+/// Ask Windows to page out free RAM so Task Manager reflects the drop.
+/// No-op on other platforms (RSS typically shrinks once arenas are freed).
+fn trim_process_working_set() {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: GetCurrentProcess returns a pseudo-handle; EmptyWorkingSet only
+        // affects this process and is best-effort (failure is non-fatal).
+        unsafe {
+            use windows::Win32::System::ProcessStatus::EmptyWorkingSet;
+            use windows::Win32::System::Threading::GetCurrentProcess;
+            let _ = EmptyWorkingSet(GetCurrentProcess());
+        }
+    }
+}
+
+/// True when an inference error likely means GPU/system allocator failure.
+/// Used to drop cached sessions so DirectML/ORT can release committed memory.
+///
+/// Prefer strong tokens (HRESULT, allocator names, full phrases). Avoid bare
+/// `"oom"` — it false-positives on words like "room" / "zoom" / "bloom".
+pub fn is_likely_oom(err: &AppError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    const NEEDLES: &[&str] = &[
+        "8007000e",
+        "e_outofmemory",
+        "out of memory",
+        "out_of_memory",
+        "not enough memory",
+        "insufficient memory",
+        "dmlcommittedresourceallocator",
+        "suficientes recursos de memoria",
+        "recursos de memoria disponibles",
+        "failed to allocate",
+        "allocation failure",
+        "cuda_error_out_of_memory",
+        "memory allocation failed",
+        "std::bad_alloc",
+        "bad_alloc",
+    ];
+    NEEDLES.iter().any(|n| msg.contains(n))
+}
+
+/// Drop sessions *outside* the cache mutex, then trim the process working set.
+/// Heavy DirectML `Session` teardown must not run while `SESSION_CACHE` is held.
+fn discard_sessions_and_trim<T>(stolen: T) {
+    drop(stolen);
+    trim_process_working_set();
+}
+
+/// Ensure `key` is present in the cache, loading outside the lock if needed.
+fn ensure_session_loaded<L>(key: &(String, String), load_bytes: &mut L) -> Result<(), AppError>
+where
+    L: FnMut() -> Result<Vec<u8>, AppError>,
+{
+    {
+        let guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if guard
+            .as_ref()
+            .is_some_and(|cache| cache.contains_key(key))
+        {
+            return Ok(());
+        }
+    }
+
+    // commit_from_memory can take seconds and may OOM — do not hold the mutex.
+    let model_bytes = load_bytes()?;
+    let session = match load_session_from_bytes(&model_bytes, &key.1) {
+        Ok(s) => s,
+        Err(e) => {
+            // Load OOM often means another cached session already ate the budget.
+            if is_likely_oom(&e) {
+                log::warn!(
+                    "OOM while loading session {key:?}; releasing all cached sessions: {e}"
+                );
+                release_all_sessions();
+            }
+            return Err(e);
+        }
+    };
+    // Drop model_bytes before insert so we do not hold file bytes + session.
+    drop(model_bytes);
+
+    let mut guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = guard.get_or_insert_with(HashMap::new);
+    // Another thread may have inserted the same key; prefer existing.
+    cache.entry(key.clone()).or_insert(session);
+    Ok(())
+}
+
+pub fn with_session<F, R, L>(model_id: &str, ep: &str, mut load_bytes: L, f: F) -> Result<R, AppError>
 where
     F: FnOnce(&mut Session) -> Result<R, AppError>,
-    L: FnOnce() -> Result<Vec<u8>, AppError>,
+    L: FnMut() -> Result<Vec<u8>, AppError>,
 {
-    let mut guard = SESSION_CACHE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let cache = guard.get_or_insert_with(HashMap::new);
     let key = (model_id.to_string(), ep.to_string());
-    if !cache.contains_key(&key) {
-        let model_bytes = load_bytes()?;
-        let session = load_session_from_bytes(&model_bytes, ep)?;
-        cache.insert(key.clone(), session);
+    ensure_session_loaded(&key, &mut load_bytes)?;
+
+    let mut guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+
+    // Key may have vanished between ensure and re-lock (invalidate / OOM cleanup
+    // on another path). Reload once rather than failing with a cryptic miss.
+    if !guard
+        .as_ref()
+        .is_some_and(|cache| cache.contains_key(&key))
+    {
+        drop(guard);
+        ensure_session_loaded(&key, &mut load_bytes)?;
+        guard = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     }
-    let session = cache
-        .get_mut(&key)
-        .ok_or_else(|| AppError::Inference("session missing from cache".to_string()))?;
-    f(session)
+
+    // End the &mut Session borrow before we steal from the map.
+    let result = {
+        let cache = guard.get_or_insert_with(HashMap::new);
+        match cache.get_mut(&key) {
+            Some(session) => f(session),
+            None => Err(AppError::Inference(
+                "session missing from cache after reload".to_string(),
+            )),
+        }
+    };
+
+    // Steal doomed sessions *before* unlock so no concurrent caller can reuse a
+    // just-failed (possibly OOM'd / half-dead DirectML) Session. Drop runs after
+    // unlock so multi-GB teardown does not block the cache mutex.
+    match &result {
+        Err(err) if is_likely_oom(err) => {
+            log::warn!(
+                "OOM-like inference error; destroying all cached sessions to free GPU/system memory: {err}"
+            );
+            let all = guard.take();
+            drop(guard);
+            discard_sessions_and_trim(all);
+        }
+        Err(err) => {
+            log::warn!("inference failed; dropping cached session {key:?}: {err}");
+            let one = {
+                let cache = guard.get_or_insert_with(HashMap::new);
+                let s = cache.remove(&key);
+                if cache.is_empty() {
+                    *guard = None;
+                }
+                s
+            };
+            drop(guard);
+            // Any destroyed multi-GB session should trim WS, not only OOM.
+            discard_sessions_and_trim(one);
+        }
+        Ok(_) => {
+            drop(guard);
+        }
+    }
+
+    result
 }
 
 pub fn run(session: &mut Session, input: &Array4<f32>) -> Result<ndarray::ArrayD<f32>, AppError> {
@@ -166,11 +333,14 @@ mod tests {
             ort::ep::CPU::default().build(),
         ];
         let session = Session::builder()
-            .map_err(|e| AppError::Inference(e.to_string())).unwrap()
+            .map_err(|e| AppError::Inference(e.to_string()))
+            .unwrap()
             .with_optimization_level(GraphOptimizationLevel::Level1)
-            .map_err(|e| AppError::Inference(e.to_string())).unwrap()
+            .map_err(|e| AppError::Inference(e.to_string()))
+            .unwrap()
             .with_execution_providers(providers)
-            .map_err(|e| AppError::Inference(e.to_string())).unwrap()
+            .map_err(|e| AppError::Inference(e.to_string()))
+            .unwrap()
             .commit_from_memory(U2NETP_MODEL_BYTES);
         let mut session = match session {
             Ok(s) => s,
@@ -206,5 +376,124 @@ mod tests {
         assert_eq!(r1.unwrap(), 1);
         assert_eq!(r2.unwrap(), 1);
         assert_eq!(r3.unwrap(), 1);
+    }
+
+    #[test]
+    fn is_likely_oom_detects_directml_and_generic_messages() {
+        assert!(is_likely_oom(&AppError::Inference(
+            "Non-zero status code ... DmlCommittedResourceAllocator.cpp ... 8007000E No hay suficientes recursos de memoria".into()
+        )));
+        assert!(is_likely_oom(&AppError::Inference(
+            "No hay suficientes recursos de memoria disponibles para completar esta operaci\u{00f3}n".into()
+        )));
+        assert!(is_likely_oom(&AppError::Inference("CUDA out of memory".into())));
+        assert!(is_likely_oom(&AppError::Inference("std::bad_alloc".into())));
+        assert!(!is_likely_oom(&AppError::Inference(
+            "model produced no outputs".into()
+        )));
+        // Bare "oom" was removed — incidental substrings must not wipe the cache.
+        assert!(!is_likely_oom(&AppError::Inference(
+            "failed in room setup".into()
+        )));
+        assert!(!is_likely_oom(&AppError::Inference("zoom level invalid".into())));
+    }
+
+    #[test]
+    fn failed_run_drops_cached_session() {
+        let _ = invalidate_all_sessions();
+        let mut load_count = 0usize;
+        let load = || {
+            load_count += 1;
+            Ok(U2NETP_MODEL_BYTES.to_vec())
+        };
+
+        let err: Result<(), AppError> = with_session("u2netp", EP_CPU, load, |_session| {
+            Err(AppError::Inference("model produced no outputs".into()))
+        });
+        assert!(err.is_err());
+
+        // Session was dropped after error → next call must reload model bytes.
+        let ok = with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                load_count += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |session| Ok(session.inputs().len()),
+        );
+        assert_eq!(ok.unwrap(), 1);
+        assert_eq!(load_count, 2);
+    }
+
+    #[test]
+    fn oom_run_clears_all_cached_sessions() {
+        let _ = invalidate_all_sessions();
+
+        // Populate two sessions.
+        with_session("u2netp", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |s| {
+            Ok(s.inputs().len())
+        })
+        .unwrap();
+        with_session("other", EP_CPU, || Ok(U2NETP_MODEL_BYTES.to_vec()), |s| {
+            Ok(s.inputs().len())
+        })
+        .unwrap();
+
+        let mut reloads = 0usize;
+        let oom: Result<(), AppError> = with_session(
+            "u2netp",
+            EP_CPU,
+            || Ok(U2NETP_MODEL_BYTES.to_vec()),
+            |_s| {
+                Err(AppError::Inference(
+                    "DmlCommittedResourceAllocator 8007000E out of memory".into(),
+                ))
+            },
+        );
+        assert!(oom.is_err());
+
+        // Both keys must have been cleared; loading either requires a new load_bytes call.
+        with_session(
+            "other",
+            EP_CPU,
+            || {
+                reloads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |s| Ok(s.inputs().len()),
+        )
+        .unwrap();
+        assert_eq!(reloads, 1);
+    }
+
+    #[test]
+    fn invalidate_all_sessions_forces_reload() {
+        let _ = invalidate_all_sessions();
+        let mut loads = 0usize;
+        with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                loads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |s| Ok(s.inputs().len()),
+        )
+        .unwrap();
+        assert_eq!(loads, 1);
+
+        let _ = invalidate_all_sessions();
+        with_session(
+            "u2netp",
+            EP_CPU,
+            || {
+                loads += 1;
+                Ok(U2NETP_MODEL_BYTES.to_vec())
+            },
+            |s| Ok(s.inputs().len()),
+        )
+        .unwrap();
+        assert_eq!(loads, 2);
     }
 }

@@ -33,10 +33,6 @@ vi.mock("@tauri-apps/api/event", () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: vi.fn(),
-}));
-
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(),
 }));
