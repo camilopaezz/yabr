@@ -19,6 +19,7 @@ import {
 } from "../lib/tauri";
 import { useAnimatedPresence } from "../lib/useAnimatedPresence";
 import { settingsStore, useSettingsStore } from "../stores/settingsStore";
+import { uiStore } from "../stores/uiStore";
 
 export function ModeSelector() {
   const mode = useSettingsStore((state) => state.mode);
@@ -38,6 +39,15 @@ export function ModeSelector() {
   const downloadSessionRef = useRef(0);
   const downloadPresence = useAnimatedPresence(Boolean(downloading));
   const ncAckPresence = useAnimatedPresence(Boolean(ncAckModel));
+
+  useEffect(() => {
+    uiStore
+      .getState()
+      .setModalBlocksShortcuts(
+        ncAckPresence.rendered || downloadPresence.rendered,
+      );
+    return () => uiStore.getState().setModalBlocksShortcuts(false);
+  }, [ncAckPresence.rendered, downloadPresence.rendered]);
 
   useEffect(() => {
     if (downloading) {

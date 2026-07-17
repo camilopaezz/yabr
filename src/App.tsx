@@ -25,6 +25,7 @@ import {
 } from "./lib/tauri";
 import { applyTheme, persistTheme } from "./lib/theme";
 import { useAnimatedPresence } from "./lib/useAnimatedPresence";
+import { useKeyboardShortcuts } from "./lib/useKeyboardShortcuts";
 import { useTauriFileDrop } from "./lib/useTauriFileDrop";
 import {
   onWindowDragDoubleClick,
@@ -32,6 +33,7 @@ import {
 } from "./lib/windowControls";
 import { useImageStore } from "./stores/imageStore";
 import { settingsStore, useSettingsStore } from "./stores/settingsStore";
+import { useUiStore } from "./stores/uiStore";
 import "./App.css";
 
 function App() {
@@ -46,6 +48,9 @@ function App() {
   const mode = useSettingsStore((state) => state.mode);
   const outputDir = useSettingsStore((state) => state.outputDir);
   const theme = useSettingsStore((state) => state.theme);
+  const modalBlocksShortcuts = useUiStore(
+    (state) => state.modalBlocksShortcuts,
+  );
   const { isDragging, paths } = useTauriFileDrop();
   const lastProcessedRef = useRef<string[] | null>(null);
   const themeSyncedRef = useRef(false);
@@ -146,6 +151,14 @@ function App() {
   }, [theme]);
 
   const settingsWasOpenRef = useRef(settingsPresence.open);
+
+  useKeyboardShortcuts({
+    ready,
+    firstRun,
+    // Block until exit animation unmounts, not only while `open` is true.
+    settingsOpen: settingsPresence.rendered,
+    modalBlocksShortcuts,
+  });
 
   useEffect(() => {
     const wasOpen = settingsWasOpenRef.current;

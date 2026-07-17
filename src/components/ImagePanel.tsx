@@ -92,6 +92,7 @@ export function ImagePanel() {
           <button
             type="button"
             className="btn-primary"
+            title="Process (Ctrl+Enter)"
             onClick={() => void handleProcess()}
             disabled={!hasImage || starting}
             aria-disabled={!hasImage || starting}
@@ -99,7 +100,12 @@ export function ImagePanel() {
             {starting ? "Starting…" : isDone ? "Re-run" : "Process"}
           </button>
         ) : (
-          <button type="button" className="btn-primary" onClick={handleCancel}>
+          <button
+            type="button"
+            className="btn-primary"
+            title="Cancel (Esc)"
+            onClick={handleCancel}
+          >
             Cancel
           </button>
         )}
