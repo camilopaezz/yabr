@@ -46,6 +46,13 @@ const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "bmp"]);
 let processGate = false;
 
 /**
+ * True while cancel is waiting for the backend inference slot to free.
+ * Keeps Process disabled even after optimistic "cancelled" status so a second
+ * click cannot overlap the still-running worker (RAM spike).
+ */
+let cancelGate = false;
+
+/**
  * Backend job id for the active run (UUID per Process click — not the image id).
  * Events are keyed on this so cancel → re-run cannot clobber the new job.
  */
@@ -57,6 +64,7 @@ const discardedRunIds = new Set<string>();
 /** Test-only: clear gate left open by aborted/timed-out startProcess. */
 export function resetProcessGateForTests(): void {
   processGate = false;
+  cancelGate = false;
   activeRunId = null;
   discardedRunIds.clear();
 }
@@ -87,9 +95,13 @@ function isCurrentRunEvent(runId: string): boolean {
   return true;
 }
 
-/** Domain busy: backend processing or overwrite/start handoff in flight. */
+/** Domain busy: backend processing, cancel wait, or overwrite/start handoff. */
 export function isProcessBusy(): boolean {
-  return processGate || imageStore.getState().current?.status === "processing";
+  return (
+    processGate ||
+    cancelGate ||
+    imageStore.getState().current?.status === "processing"
+  );
 }
 
 export function acceptDrop(
@@ -216,20 +228,49 @@ export async function startProcess(
   }
 }
 
-export function cancelProcess(deps: CancelDeps): void {
+/**
+ * Optimistically marks the UI cancelled, then waits for backend cancel to free
+ * the inference slot before allowing another Process.
+ */
+export async function cancelProcess(deps: CancelDeps): Promise<void> {
   const current = imageStore.getState().current;
   if (current?.status !== "processing") return;
+  if (cancelGate) return;
 
   const runId = activeRunId ?? current.id;
   discardedRunIds.add(runId);
   activeRunId = null;
-  deps.cancelInference(runId).catch(() => {});
+  cancelGate = true;
   imageStore.getState().patch({
     status: "cancelled",
     progress: 0,
     stage: null,
     error: null,
   });
+  try {
+    await deps.cancelInference(runId);
+  } catch {
+    // Slot may still be held — keep cancelGate so Process stays blocked.
+    // Best-effort retry once; if that fails, leave the gate set so we do not
+    // re-enable start while the backend may still be busy (backend single-flight
+    // still rejects overlap). User can retry cancel; tests use resetProcessGateForTests.
+    try {
+      await deps.cancelInference(runId);
+    } catch {
+      // Nudge subscribers so UI reflects cancelled + still-busy gate.
+      const still = imageStore.getState().current;
+      if (still) {
+        imageStore.getState().patch({ status: still.status });
+      }
+      return;
+    }
+  }
+  cancelGate = false;
+  // Nudge store subscribers (FileBlock, etc.) so they re-read isProcessBusy().
+  const still = imageStore.getState().current;
+  if (still) {
+    imageStore.getState().patch({ status: still.status });
+  }
 }
 
 /** Returns false if clear was rejected because a process is busy. */

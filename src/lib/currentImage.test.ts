@@ -11,8 +11,8 @@ import {
   initCurrentImageListeners,
   isProcessBusy,
   resetProcessGateForTests,
-  setActiveRunIdForTests,
   type StartProcessDeps,
+  setActiveRunIdForTests,
   startProcess,
   syncOutputPath,
 } from "./currentImage";
@@ -317,18 +317,18 @@ describe("currentImage", () => {
   });
 
   describe("cancelProcess / clearCurrent", () => {
-    it("fires cancelInference without awaiting", () => {
+    it("awaits cancelInference for the active run id", async () => {
       imageStore.getState().set({
         ...makeReadyItem({ id: "img-cancel-fire" }),
         status: "processing",
       });
       setActiveRunIdForTests("run-fire");
       const cancelInference = vi.fn().mockResolvedValue(undefined);
-      cancelProcess({ cancelInference });
+      await cancelProcess({ cancelInference });
       expect(cancelInference).toHaveBeenCalledWith("run-fire");
     });
 
-    it("optimistically sets cancelled while processing", () => {
+    it("optimistically sets cancelled while processing", async () => {
       imageStore.getState().set({
         ...makeReadyItem({ id: "img-cancel" }),
         status: "processing",
@@ -336,7 +336,7 @@ describe("currentImage", () => {
         stage: "inferring",
       });
       const cancelInference = vi.fn().mockResolvedValue(undefined);
-      cancelProcess({ cancelInference });
+      await cancelProcess({ cancelInference });
       expect(cancelInference).toHaveBeenCalled();
       const current = imageStore.getState().current;
       expect(current?.status).toBe("cancelled");
@@ -345,12 +345,56 @@ describe("currentImage", () => {
       expect(current?.error).toBeNull();
     });
 
-    it("does not patch when not processing", () => {
+    it("keeps isProcessBusy until cancelInference resolves", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-cancel-busy" }),
+        status: "processing",
+      });
+      setActiveRunIdForTests("run-busy");
+      let resolveCancel!: () => void;
+      const cancelInference = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCancel = resolve;
+          }),
+      );
+
+      const pending = cancelProcess({ cancelInference });
+      await vi.waitFor(() => expect(cancelInference).toHaveBeenCalled());
+      expect(imageStore.getState().current?.status).toBe("cancelled");
+      expect(isProcessBusy()).toBe(true);
+      expect(await startProcess(makeDeps())).toBe("already-processing");
+
+      resolveCancel();
+      await pending;
+      expect(isProcessBusy()).toBe(false);
+    });
+
+    it("keeps cancelGate when cancelInference fails both attempts", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-cancel-fail" }),
+        status: "processing",
+      });
+      setActiveRunIdForTests("run-fail");
+      const cancelInference = vi
+        .fn()
+        .mockRejectedValue(new Error("ipc failed"));
+
+      await cancelProcess({ cancelInference });
+      expect(cancelInference).toHaveBeenCalledTimes(2);
+      expect(imageStore.getState().current?.status).toBe("cancelled");
+      expect(isProcessBusy()).toBe(true);
+      expect(await startProcess(makeDeps())).toBe("already-processing");
+    });
+
+    it("does not patch when not processing", async () => {
       imageStore.getState().set({
         ...makeReadyItem({ id: "img-ready" }),
         status: "ready",
       });
-      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      await cancelProcess({
+        cancelInference: vi.fn().mockResolvedValue(undefined),
+      });
       expect(imageStore.getState().current?.status).toBe("ready");
     });
 
@@ -364,6 +408,27 @@ describe("currentImage", () => {
       imageStore.getState().set({ ...makeReadyItem(), status: "processing" });
       expect(clearCurrent()).toBe(false);
       expect(imageStore.getState().current?.status).toBe("processing");
+    });
+
+    it("refuses clear while cancel is freeing the backend slot", async () => {
+      imageStore.getState().set({
+        ...makeReadyItem(),
+        status: "processing",
+      });
+      let resolveCancel!: () => void;
+      const pending = cancelProcess({
+        cancelInference: () =>
+          new Promise<void>((resolve) => {
+            resolveCancel = resolve;
+          }),
+      });
+      await vi.waitFor(() =>
+        expect(imageStore.getState().current?.status).toBe("cancelled"),
+      );
+      expect(clearCurrent()).toBe(false);
+      resolveCancel();
+      await pending;
+      expect(clearCurrent()).toBe(true);
     });
   });
 
@@ -469,7 +534,7 @@ describe("currentImage", () => {
       expect(current?.stage).toBeNull();
     });
 
-    it("ignores late done after optimistic cancel for that job id", () => {
+    it("ignores late done after optimistic cancel for that job id", async () => {
       imageStore.getState().set({
         ...makeReadyItem({ id: "img-late" }),
         status: "processing",
@@ -477,7 +542,9 @@ describe("currentImage", () => {
         stage: "encoding",
       });
       setActiveRunIdForTests("run-late");
-      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      await cancelProcess({
+        cancelInference: vi.fn().mockResolvedValue(undefined),
+      });
       expect(imageStore.getState().current?.status).toBe("cancelled");
 
       applyDone({
@@ -491,13 +558,15 @@ describe("currentImage", () => {
       expect(current?.progress).toBe(0);
     });
 
-    it("ignores late error after optimistic cancel for that job id", () => {
+    it("ignores late error after optimistic cancel for that job id", async () => {
       imageStore.getState().set({
         ...makeReadyItem({ id: "img-late-err" }),
         status: "processing",
       });
       setActiveRunIdForTests("run-late-err");
-      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      await cancelProcess({
+        cancelInference: vi.fn().mockResolvedValue(undefined),
+      });
       applyError({ id: "run-late-err", message: "cancelled" });
       applyError({ id: "run-late-err", message: "out of memory" });
       const current = imageStore.getState().current;
@@ -538,25 +607,35 @@ describe("currentImage", () => {
       const firstRunId = removeBackground.mock.calls[0]?.[0]?.id as string;
       expect(firstRunId).toBeTruthy();
 
-      cancelProcess({ cancelInference: vi.fn().mockResolvedValue(undefined) });
+      // Mirror backend: cancel resolves only after the first job finishes.
+      const cancelPending = cancelProcess({
+        cancelInference: async () => {
+          await firstDone;
+        },
+      });
       expect(imageStore.getState().current?.status).toBe("cancelled");
+      expect(isProcessBusy()).toBe(true);
       resolveFirst?.();
       await first;
+      await cancelPending;
+      expect(isProcessBusy()).toBe(false);
 
       // New run on same image
       const second = startProcess({
         ...deps,
-        removeBackground: vi.fn().mockImplementation(async (job: { id: string }) => {
-          // Late events from the first run must not cancel this job.
-          applyDone({
-            id: firstRunId,
-            output_path: "/tmp/stale.png",
-            timings: { stages: [], total_seconds: 0 },
-          });
-          applyError({ id: firstRunId, message: "cancelled" });
-          expect(imageStore.getState().current?.status).toBe("processing");
-          expect(job.id).not.toBe(firstRunId);
-        }),
+        removeBackground: vi
+          .fn()
+          .mockImplementation(async (job: { id: string }) => {
+            // Late events from the first run must not cancel this job.
+            applyDone({
+              id: firstRunId,
+              output_path: "/tmp/stale.png",
+              timings: { stages: [], total_seconds: 0 },
+            });
+            applyError({ id: firstRunId, message: "cancelled" });
+            expect(imageStore.getState().current?.status).toBe("processing");
+            expect(job.id).not.toBe(firstRunId);
+          }),
       });
       await second;
       expect(imageStore.getState().current?.status).toBe("processing");

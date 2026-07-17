@@ -1,7 +1,8 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   cancelProcess,
+  isProcessBusy,
   prodCancelDeps,
   prodStartProcessDeps,
   startProcess,
@@ -33,21 +34,16 @@ export function ImagePanel() {
   const cancellingRef = useRef(false);
 
   const isProcessing = current?.status === "processing";
-  const busy = Boolean(isProcessing || starting);
+  // Keep Cancel chrome while backend cancel is still freeing the slot.
+  const showCancel = isProcessing || cancelling;
   const hasImage = Boolean(current);
   const isDone = current?.status === "done";
   const canShowInFolder = isDone && Boolean(current?.outputPath);
-
-  // Clear cancel chrome when we leave processing (optimistic cancel included).
-  useEffect(() => {
-    if (!isProcessing) {
-      cancellingRef.current = false;
-      setCancelling(false);
-    }
-  }, [isProcessing]);
+  const processDisabled =
+    !hasImage || starting || cancelling || isProcessBusy();
 
   const handleProcess = async () => {
-    if (busy || !current) return;
+    if (processDisabled || !current) return;
     setStarting(true);
     try {
       await startProcess(prodStartProcessDeps());
@@ -60,9 +56,12 @@ export function ImagePanel() {
     if (cancellingRef.current || !isProcessing) return;
     cancellingRef.current = true;
     setCancelling(true);
-    cancelProcess(prodCancelDeps());
-    // Optimistic cancel ends "processing"; do not show Process as "Starting…".
-    setStarting(false);
+    // Optimistic cancel ends "processing"; keep Cancel disabled until the
+    // backend slot is free so Process cannot start a second overlapping job.
+    void cancelProcess(prodCancelDeps()).finally(() => {
+      cancellingRef.current = false;
+      setCancelling(false);
+    });
   };
 
   const handleShowInFolder = async () => {
@@ -75,11 +74,14 @@ export function ImagePanel() {
   };
 
   // While processing, ProgressBar already shows stage + % — skip duplicate status line.
+  // During cancel wait status is already "cancelled" but Cancel chrome is still up.
   const statusText = !current
     ? "No image selected"
     : isProcessing
       ? null
-      : `${statusLabel(current)}${current.error ? `: ${current.error}` : ""}`;
+      : cancelling
+        ? "Cancelling…"
+        : `${statusLabel(current)}${current.error ? `: ${current.error}` : ""}`;
 
   return (
     <div className="image-panel">
@@ -96,21 +98,21 @@ export function ImagePanel() {
       )}
 
       <div className="image-panel-actions">
-        {canShowInFolder && !isProcessing && (
+        {canShowInFolder && !showCancel && (
           <button type="button" onClick={() => void handleShowInFolder()}>
             Show in folder
           </button>
         )}
 
         {/* Always mount Process when idle so it stays visible (disabled if no image). */}
-        {!isProcessing ? (
+        {!showCancel ? (
           <button
             type="button"
             className="btn-primary"
             title="Process (Ctrl+Enter)"
             onClick={() => void handleProcess()}
-            disabled={!hasImage || starting}
-            aria-disabled={!hasImage || starting}
+            disabled={processDisabled}
+            aria-disabled={processDisabled}
           >
             {starting ? "Starting…" : isDone ? "Re-run" : "Process"}
           </button>

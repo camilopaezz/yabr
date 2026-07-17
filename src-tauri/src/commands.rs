@@ -232,7 +232,15 @@ pub async fn cancel_inference(
     job_id: String,
 ) -> Result<(), AppError> {
     // Scoped: a late cancel for a finished job must not trip the next run.
-    state.cancel_job(&job_id);
+    // Only wait when this job was actually active — a stale id must not block
+    // on an unrelated worker holding the slot.
+    if state.cancel_job(&job_id) {
+        // Block until the worker releases the slot so a follow-up Process cannot
+        // race the still-running job (RAM spike from overlapping inference).
+        // Cancel is cooperative (checked between pipeline stages); long ORT
+        // inferring work may delay return until that stage finishes.
+        state.wait_until_idle().await;
+    }
     Ok(())
 }
 
