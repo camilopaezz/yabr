@@ -7,6 +7,7 @@ import {
   prodStartProcessDeps,
   startProcess,
 } from "../lib/currentImage";
+import { formatError } from "../lib/errorCopy";
 import { type ImageItem, useImageStore } from "../stores/imageStore";
 import { ProgressBar } from "./ProgressBar";
 
@@ -75,13 +76,16 @@ export function ImagePanel() {
 
   // While processing, ProgressBar already shows stage + % — skip duplicate status line.
   // During cancel wait status is already "cancelled" but Cancel chrome is still up.
+  const errorTitle = current?.error
+    ? formatError(current.error.code, current.error.message).title
+    : null;
   const statusText = !current
     ? "No image selected"
     : isProcessing
       ? null
       : cancelling
         ? "Cancelling…"
-        : `${statusLabel(current)}${current.error ? `: ${current.error.message}` : ""}`;
+        : `${statusLabel(current)}${errorTitle ? `: ${errorTitle}` : ""}`;
 
   return (
     <div className="image-panel">

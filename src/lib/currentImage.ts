@@ -1,18 +1,22 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { type ImageItem, imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
+import { uiStore } from "../stores/uiStore";
+import { formatFallbackNotice } from "./errorCopy";
 import { shouldProceedWithOverwrite } from "./overwrite";
 import { ERROR_CODES, parseAppError } from "./parseAppError";
 import { deriveOutputPath } from "./path";
 import {
   type InferenceDonePayload,
   type InferenceErrorPayload,
+  type InferenceFallbackPayload,
   type InferenceProgressPayload,
   invokeCancelInference,
   invokePathExists,
   invokeRemoveImageBackground,
   listenInferenceDone,
   listenInferenceError,
+  listenInferenceFallback,
   listenInferenceProgress,
 } from "./tauri";
 
@@ -369,6 +373,27 @@ export function applyError(payload: {
   });
 }
 
+/** Apply GPU→CPU fallback notice for the active run (process stays non-error). */
+export function applyFallback(payload: InferenceFallbackPayload): void {
+  if (isDiscardedRun(payload.id)) {
+    discardedRunIds.delete(payload.id);
+    return;
+  }
+  if (!isCurrentRunEvent(payload.id)) return;
+  const current = imageStore.getState().current;
+  if (!current) return;
+  if (activeRunId === null && current.id !== payload.id) return;
+  if (current.status === "cancelled") return;
+
+  const copy = formatFallbackNotice(payload.from_ep, payload.to_ep);
+  uiStore.getState().showNotice({
+    severity: "warning",
+    title: copy.title,
+    body: copy.body,
+    code: "inference_fallback",
+  });
+}
+
 export async function initCurrentImageListeners(): Promise<() => void> {
   const unsubscribeProgress = await listenInferenceProgress(
     (payload: InferenceProgressPayload) => {
@@ -391,10 +416,17 @@ export async function initCurrentImageListeners(): Promise<() => void> {
     },
   );
 
+  const unsubscribeFallback = await listenInferenceFallback(
+    (payload: InferenceFallbackPayload) => {
+      applyFallback(payload);
+    },
+  );
+
   return () => {
     unsubscribeProgress();
     unsubscribeDone();
     unsubscribeError();
+    unsubscribeFallback();
   };
 }
 

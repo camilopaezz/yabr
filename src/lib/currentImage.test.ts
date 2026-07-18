@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
+import { uiStore } from "../stores/uiStore";
 import {
   acceptDrop,
   applyDone,
   applyError,
+  applyFallback,
   applyProgress,
   cancelProcess,
   clearCurrent,
@@ -731,6 +733,50 @@ describe("currentImage", () => {
       expect(current?.status).toBe("cancelled");
       expect(current?.error).toBeNull();
       expect(current?.stage).toBeNull();
+    });
+
+    it("shows sticky fallback notice on inference:fallback", async () => {
+      uiStore.getState().dismissNotice();
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-fb" }),
+        status: "processing",
+        progress: 50,
+        stage: "inferring",
+      });
+      setActiveRunIdForTests("run-fb");
+      await initCurrentImageListeners();
+      handlers["inference:fallback"]({
+        payload: {
+          id: "run-fb",
+          reason: "oom",
+          from_ep: "cuda",
+          to_ep: "cpu",
+        },
+      });
+      const notice = uiStore.getState().notice;
+      expect(notice?.severity).toBe("warning");
+      expect(notice?.title).toMatch(/CPU/i);
+      expect(notice?.body).toMatch(/Settings/i);
+      // Fallback must not flip the image into error.
+      expect(imageStore.getState().current?.status).toBe("processing");
+    });
+  });
+
+  describe("applyFallback", () => {
+    it("ignores fallback for other run ids", () => {
+      uiStore.getState().dismissNotice();
+      imageStore.getState().set({
+        ...makeReadyItem({ id: "img-1" }),
+        status: "processing",
+      });
+      setActiveRunIdForTests("run-a");
+      applyFallback({
+        id: "run-b",
+        reason: "oom",
+        from_ep: "directml",
+        to_ep: "cpu",
+      });
+      expect(uiStore.getState().notice).toBeNull();
     });
   });
 });

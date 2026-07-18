@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import appLogoSvg from "./assets/app-logo.svg?raw";
+import { AppNotice } from "./components/AppNotice";
 import { FileBlock } from "./components/FileBlock";
 import { ImagePanel } from "./components/ImagePanel";
 import { InlineSvg } from "./components/InlineSvg";
@@ -194,6 +195,8 @@ function App() {
         settingsButtonRef={settingsButtonRef}
         onOpenSettings={() => setSettingsVisible(true)}
       />
+
+      <AppNotice />
 
       {/* U14: first-run acceleration detector only — not a generic cold-start splash. */}
       {firstRun && (

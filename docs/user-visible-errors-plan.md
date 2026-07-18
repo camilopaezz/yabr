@@ -137,11 +137,11 @@ Strangers never need DevTools. Failures and successful GPU→CPU fallback are vi
 
 ### PR2 — Core UX
 
-- [ ] `errorCopy.ts` for process/download/fallback/oom-related codes
-- [ ] Image footer uses friendly title (not raw `Error: …` only)
-- [ ] Download error state + Retry
-- [ ] `uiStore` notice + banner; fallback sticky warning
-- [ ] Mocked Playwright covers friendly process error, download retry, fallback notice
+- [x] `errorCopy.ts` for process/download/fallback/oom-related codes
+- [x] Image footer uses friendly title (not raw `Error: …` only)
+- [x] Download error state + Retry
+- [x] `uiStore` notice + banner; fallback sticky warning
+- [x] Mocked Playwright covers friendly process error, download retry, fallback notice
 
 ### PR3 — Full inventory
 

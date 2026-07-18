@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isDownloadCancelled } from "../lib/downloadCancel";
+import { formatError } from "../lib/errorCopy";
 import {
   FALLBACK_DEFAULT_MODE,
   isModelReady,
@@ -13,6 +14,7 @@ import {
   setNcLicenseAck,
   shouldShowNcBadge,
 } from "../lib/ncLicense";
+import { parseAppError } from "../lib/parseAppError";
 import {
   invokeCancelDownload,
   invokeDownloadModel,
@@ -22,6 +24,12 @@ import {
 import { useAnimatedPresence } from "../lib/useAnimatedPresence";
 import { settingsStore, useSettingsStore } from "../stores/settingsStore";
 import { uiStore } from "../stores/uiStore";
+
+type DownloadErrorState = {
+  model: ModelMeta;
+  code: string;
+  message: string;
+};
 
 export function ModeSelector() {
   const mode = useSettingsStore((state) => state.mode);
@@ -36,6 +44,9 @@ export function ModeSelector() {
   const [cancelling, setCancelling] = useState(false);
   const cancellingRef = useRef(false);
   const [ncAckModel, setNcAckModel] = useState<ModelMeta | null>(null);
+  const [downloadError, setDownloadError] = useState<DownloadErrorState | null>(
+    null,
+  );
   /** Bumped only when a new download starts; invalidates stale in-flight work. */
   const downloadSessionRef = useRef(0);
   const downloadPresence = useAnimatedPresence(Boolean(downloading));
@@ -137,10 +148,20 @@ export function ModeSelector() {
           console.error("failed to refresh models", err);
         }
       } catch (err: unknown) {
-        if (!isDownloadCancelled(err)) {
-          console.error("download failed", err);
+        if (isDownloadCancelled(err)) {
+          if (isCurrentSession() && !cancellingRef.current) {
+            setDownloading(null);
+          }
+          return;
         }
+        console.error("download failed", err);
         if (isCurrentSession() && !cancellingRef.current) {
+          const parsed = parseAppError(err);
+          setDownloadError({
+            model: downloading,
+            code: parsed.code,
+            message: parsed.message,
+          });
           setDownloading(null);
         }
       }
@@ -158,6 +179,7 @@ export function ModeSelector() {
     setCancelling(false);
     setDownloadProgress(0);
     setDownloadStage("download");
+    setDownloadError(null);
     setDownloading(model);
   };
 
@@ -191,6 +213,15 @@ export function ModeSelector() {
     startDownload(model);
   };
 
+  const handleDownloadRetry = () => {
+    if (!downloadError || downloading) return;
+    beginDownload(downloadError.model);
+  };
+
+  const handleDownloadErrorDismiss = () => {
+    setDownloadError(null);
+  };
+
   const handleCancel = () => {
     if (cancellingRef.current) return;
     cancellingRef.current = true;
@@ -204,19 +235,18 @@ export function ModeSelector() {
       } catch (err: unknown) {
         console.error("failed to cancel download", err);
       } finally {
-        if (downloadSessionRef.current !== session) {
-          return;
-        }
-        cancellingRef.current = false;
-        setCancelling(false);
-        setDownloading(null);
-        try {
-          const list = await invokeListModels();
-          if (downloadSessionRef.current === session) {
-            applyModels(list);
+        if (downloadSessionRef.current === session) {
+          cancellingRef.current = false;
+          setCancelling(false);
+          setDownloading(null);
+          try {
+            const list = await invokeListModels();
+            if (downloadSessionRef.current === session) {
+              applyModels(list);
+            }
+          } catch (listErr: unknown) {
+            console.error("failed to refresh models", listErr);
           }
-        } catch (listErr: unknown) {
-          console.error("failed to refresh models", listErr);
         }
       }
     })();
@@ -346,6 +376,43 @@ export function ModeSelector() {
               aria-disabled={cancelling}
             >
               {cancelling ? "Cancelling…" : "Cancel"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {downloadError && !downloading && (
+        <div
+          className="mode-download-error"
+          role="alert"
+          data-testid="download-error"
+        >
+          {(() => {
+            const copy = formatError(downloadError.code, downloadError.message);
+            return (
+              <>
+                <div className="mode-download-error-title">
+                  {copy.title}
+                  {downloadError.model.name
+                    ? ` — ${downloadError.model.name}`
+                    : ""}
+                </div>
+                {copy.body ? (
+                  <div className="mode-download-error-body">{copy.body}</div>
+                ) : null}
+              </>
+            );
+          })()}
+          <div className="mode-download-error-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleDownloadRetry}
+            >
+              Retry
+            </button>
+            <button type="button" onClick={handleDownloadErrorDismiss}>
+              Dismiss
             </button>
           </div>
         </div>

@@ -690,6 +690,101 @@ button.mode-option-download:disabled {
   color: var(--danger);
 }
 
+/* ── App notice (shared error/warning banner) ───────────── */
+
+.app-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  flex-shrink: 0;
+  z-index: 5;
+}
+
+.app-notice.is-error {
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+  color: var(--fg);
+}
+
+.app-notice.is-warning {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--fg);
+}
+
+.app-notice.is-info {
+  background: var(--bg-elevated, var(--bg));
+  color: var(--fg);
+}
+
+.app-notice-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-notice-title {
+  font-weight: 600;
+}
+
+.app-notice-text {
+  margin-top: 2px;
+  color: var(--fg-muted);
+  word-break: break-word;
+}
+
+.app-notice-dismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.app-notice-dismiss:hover {
+  color: var(--fg);
+}
+
+/* Download error (mode selector local) */
+
+.mode-download-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-download-error-title {
+  color: var(--danger);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.mode-download-error-body {
+  color: var(--fg-muted);
+  word-break: break-word;
+}
+
+.mode-download-error-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mode-download-error-actions button {
+  font-size: 0.82rem;
+}
+
 .image-panel-actions {
   display: flex;
   flex-direction: column;

@@ -183,8 +183,8 @@ Use this as a trackable backlog; check items off as they ship.
 
 ### Reliability
 
-- [ ] User-visible errors for model list / download / process / reveal-in-folder (PR1 contract ✅ `{code,message}`; UI copy PR2–3 — see [`user-visible-errors-plan.md`](user-visible-errors-plan.md))
-- [ ] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; UI notice pending PR2)
+- [ ] User-visible errors for model list / download / process / reveal-in-folder (PR1 contract ✅; process/download/fallback UI ✅ PR2; list/settings/reveal/first-run PR3 — see [`user-visible-errors-plan.md`](user-visible-errors-plan.md))
+- [x] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; sticky UI notice ✅ PR2)
 - [x] Backend download cancel (if UI cancel is kept)
 - [ ] Large-image guard or clear “may fail” messaging
 

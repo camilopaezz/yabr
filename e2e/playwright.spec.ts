@@ -209,4 +209,92 @@ test.describe("SwiftMask", () => {
       page.getByRole("heading", { name: "Downloading Balanced+" }),
     ).toBeVisible();
   });
+
+  test("process error shows friendly footer copy", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("Drop an image here")).toBeVisible();
+
+    await page.evaluate(() => {
+      const state = window.__SWIFTMASK_MOCK__;
+      if (!state) throw new Error("mock missing");
+      state.inferenceMode = "error";
+    });
+
+    await page.evaluate((fixturePath) => {
+      const hook = window.__swiftmaskInjectDrop;
+      if (!hook) throw new Error("E2E drop hook not available");
+      hook([fixturePath]);
+    }, E2E_FIXTURE_PATH);
+
+    await page.getByRole("button", { name: /process/i }).click();
+
+    await expect(page.locator(".image-panel-status.is-error")).toContainText(
+      "Out of memory",
+      { timeout: 10_000 },
+    );
+    // Must not dump raw CUDA strings as the only copy.
+    await expect(
+      page.locator(".image-panel-status.is-error"),
+    ).not.toContainText("CUDA");
+  });
+
+  test("GPU fallback shows sticky notice and still completes", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByText("Drop an image here")).toBeVisible();
+
+    await page.evaluate(() => {
+      const state = window.__SWIFTMASK_MOCK__;
+      if (!state) throw new Error("mock missing");
+      state.inferenceMode = "fallback";
+    });
+
+    await page.evaluate((fixturePath) => {
+      const hook = window.__swiftmaskInjectDrop;
+      if (!hook) throw new Error("E2E drop hook not available");
+      hook([fixturePath]);
+    }, E2E_FIXTURE_PATH);
+
+    await page.getByRole("button", { name: /process/i }).click();
+
+    const notice = page.getByTestId("app-notice");
+    await expect(notice).toBeVisible({ timeout: 10_000 });
+    await expect(notice).toContainText("Finished on CPU");
+    await expect(notice).toHaveAttribute("data-severity", "warning");
+    await expect(page.getByText("Done")).toBeVisible();
+
+    await notice.getByRole("button", { name: "Dismiss notice" }).click();
+    await expect(notice).toHaveCount(0);
+  });
+
+  test("download failure shows Retry and can recover", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("Quality mode")).toBeVisible();
+
+    // Turbo is bundled; use Balanced (isnet) which is free and not bundled.
+    const balancedRow = page
+      .locator(".mode-option")
+      .filter({ hasText: "Balanced" })
+      .filter({ hasNotText: "Balanced+" });
+
+    await page.evaluate(() => {
+      const state = window.__SWIFTMASK_MOCK__;
+      if (!state) throw new Error("mock missing");
+      state.failNextDownload = true;
+    });
+
+    await balancedRow.getByRole("button", { name: "Download" }).click();
+
+    const downloadError = page.getByTestId("download-error");
+    await expect(downloadError).toBeVisible({ timeout: 10_000 });
+    await expect(downloadError).toContainText("Network error");
+
+    await downloadError.getByRole("button", { name: "Retry" }).click();
+    await expect(downloadError).toHaveCount(0);
+    // After success the Download chip becomes model id badge / ready.
+    await expect(
+      balancedRow.getByRole("button", { name: "Download" }),
+    ).toHaveCount(0, { timeout: 10_000 });
+  });
 });

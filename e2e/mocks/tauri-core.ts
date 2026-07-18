@@ -28,8 +28,11 @@ export function invoke<T>(
     }
     case "list_models":
       return Promise.resolve(state.config.models as T);
-    case "download_model":
-      return simulateDownload(args?.model_id as string) as Promise<T>;
+    case "download_model": {
+      // FE uses camelCase `modelId`; tolerate snake_case too.
+      const modelId = (args?.modelId ?? args?.model_id) as string;
+      return simulateDownload(modelId) as Promise<T>;
+    }
     case "cancel_download":
       return Promise.resolve(undefined as T);
     case "pick_output_dir":
@@ -56,31 +59,58 @@ export function invoke<T>(
   }
 }
 
+function emitEvent(event: string, payload: unknown) {
+  const state = getMockState();
+  for (const handler of state.listeners[event] ?? []) {
+    handler({ payload });
+  }
+}
+
 function simulateInference(args: {
   id: string;
   outputPath: string;
 }): Promise<void> {
   const state = getMockState();
   const { id, outputPath } = args;
+  const mode = state.inferenceMode ?? "success";
 
   const promise = new Promise<void>((resolve) => {
-    const emit = (event: string, payload: unknown) => {
-      for (const handler of state.listeners[event] ?? []) {
-        handler({ payload });
-      }
-    };
-
     setTimeout(() => {
-      emit("inference:progress", { id, stage: "preprocessing", pct: 0 });
+      emitEvent("inference:progress", { id, stage: "preprocessing", pct: 0 });
     }, 50);
 
     setTimeout(() => {
-      emit("inference:progress", { id, stage: "inferring", pct: 50 });
+      emitEvent("inference:progress", { id, stage: "inferring", pct: 50 });
     }, 150);
 
     setTimeout(() => {
-      emit("inference:progress", { id, stage: "encoding", pct: 100 });
-      emit("inference:done", {
+      if (mode === "error") {
+        // Job failures are event-only in production (command returns Ok).
+        emitEvent("inference:error", {
+          id,
+          code: "oom",
+          message: "CUDA out of memory",
+        });
+        resolve();
+        return;
+      }
+
+      if (mode === "fallback") {
+        emitEvent("inference:fallback", {
+          id,
+          reason: "oom",
+          from_ep: "cuda",
+          to_ep: "cpu",
+        });
+        emitEvent("inference:progress", {
+          id,
+          stage: "inferring-cpu",
+          pct: 55,
+        });
+      }
+
+      emitEvent("inference:progress", { id, stage: "encoding", pct: 100 });
+      emitEvent("inference:done", {
         id,
         output_path: outputPath,
         timings: {
@@ -108,16 +138,17 @@ function simulateInference(args: {
 
 function simulateDownload(modelId: string): Promise<void> {
   const state = getMockState();
+  if (state.failNextDownload) {
+    state.failNextDownload = false;
+    return Promise.reject({
+      code: "network",
+      message: "request failed: connection refused",
+    });
+  }
   return new Promise((resolve) => {
-    const emit = (event: string, payload: unknown) => {
-      for (const handler of state.listeners[event] ?? []) {
-        handler({ payload });
-      }
-    };
-
     setTimeout(
       () =>
-        emit("model:download", {
+        emitEvent("model:download", {
           model_id: modelId,
           pct: 50,
           stage: "download",
@@ -125,11 +156,15 @@ function simulateDownload(modelId: string): Promise<void> {
       50,
     );
     setTimeout(() => {
-      emit("model:download", {
+      emitEvent("model:download", {
         model_id: modelId,
         pct: 100,
         stage: "verify",
       });
+      // Mark model downloaded so retry / badge flip work like production.
+      state.config.models = state.config.models.map((m) =>
+        m.id === modelId ? { ...m, downloaded: true } : m,
+      );
       resolve();
     }, 100);
   });
