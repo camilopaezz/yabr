@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -8,8 +8,13 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
+use crate::download::{DownloadSlotGuard, DownloadState};
 use crate::error::AppError;
 use crate::events::{ModelDownloadPayload, MODEL_DOWNLOAD};
+
+fn is_cancelled(err: &AppError) -> bool {
+    matches!(err, AppError::Cancelled)
+}
 
 // ======================================================================
 // Checksum sources:
@@ -251,11 +256,20 @@ async fn finalize_model_file(partial_path: &Path, file_path: &Path) -> Result<()
     )))
 }
 
-pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppError> {
+pub async fn download_model(
+    app: &AppHandle,
+    state: &Arc<DownloadState>,
+    model_id: &str,
+) -> Result<(), AppError> {
     let model = find_model(model_id)?;
+    // Bundled models are already in-binary — do not take the single-flight slot.
     if model.bundled {
         return Ok(());
     }
+
+    state.try_acquire()?;
+    let _slot = DownloadSlotGuard(state.clone());
+
     let cache_dir = model_cache_dir(app)?;
     let file_path = cache_dir.join(&model.file);
     std::fs::create_dir_all(&cache_dir)?;
@@ -282,9 +296,13 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
     // Intact cache hit: verify, then skip re-download. Corrupt/partial finals
     // are removed so we never treat an empty Windows write as ready.
     if file_path.exists() {
-        match verify_model_file(model, &file_path, &mut on_progress).await {
+        state.check_cancel()?;
+        match verify_model_file(model, &file_path, &mut on_progress, Some(state)).await {
             Ok(()) => return Ok(()),
             Err(e) => {
+                if is_cancelled(&e) {
+                    return Err(e);
+                }
                 log::warn!(
                     "cached model {} failed verification, re-downloading: {}",
                     model.id,
@@ -295,13 +313,14 @@ pub async fn download_model(app: &AppHandle, model_id: &str) -> Result<(), AppEr
         }
     }
 
-    download_to_file(model, &file_path, on_progress).await
+    download_to_file(model, &file_path, on_progress, Some(state)).await
 }
 
 async fn download_to_file<F>(
     model: &ModelEntry,
     file_path: &Path,
     mut on_progress: F,
+    cancel: Option<&DownloadState>,
 ) -> Result<(), AppError>
 where
     F: FnMut(&str, f32) + Send,
@@ -317,51 +336,75 @@ where
     let partial_path = partial_path_for(file_path);
     let mut last_err: Option<AppError> = None;
     for attempt in 0..3 {
+        if let Some(ds) = cancel {
+            ds.check_cancel()?;
+        }
+
         // Reuse a verified partial left by a prior finalize failure (Windows AV
         // lock) instead of discarding SHA-passed bytes and re-downloading.
         if is_nonempty_file(&partial_path) {
-            match verify_model_file(model, &partial_path, &mut on_progress).await {
-                Ok(()) => match finalize_model_file(&partial_path, file_path).await {
-                    Ok(()) => return Ok(()),
-                    Err(e) => {
-                        log::warn!(
-                            "download attempt {} for {} finalize failed: {}",
-                            attempt + 1,
-                            model.id,
-                            e
-                        );
-                        last_err = Some(e);
-                        if attempt < 2 {
-                            tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
-                            continue;
-                        }
-                        let _ = std::fs::remove_file(&partial_path);
-                        break;
+            match verify_model_file(model, &partial_path, &mut on_progress, cancel).await {
+                Ok(()) => {
+                    if let Some(ds) = cancel {
+                        ds.check_cancel()?;
                     }
-                },
-                Err(_) => {
+                    match finalize_model_file(&partial_path, file_path).await {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            log::warn!(
+                                "download attempt {} for {} finalize failed: {}",
+                                attempt + 1,
+                                model.id,
+                                e
+                            );
+                            last_err = Some(e);
+                            if attempt < 2 {
+                                if let Some(ds) = cancel {
+                                    ds.check_cancel()?;
+                                }
+                                tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
+                                continue;
+                            }
+                            let _ = std::fs::remove_file(&partial_path);
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    if is_cancelled(&e) {
+                        return Err(e);
+                    }
                     let _ = std::fs::remove_file(&partial_path);
                 }
             }
         }
 
-        match try_download(&client, model, &partial_path, &mut on_progress).await {
-            Ok(()) => match verify_model_file(model, &partial_path, &mut on_progress).await {
-                Ok(()) => match finalize_model_file(&partial_path, file_path).await {
-                    Ok(()) => return Ok(()),
-                    Err(e) => {
-                        // Keep partial so the next attempt can finalize without
-                        // re-fetching (handled at loop top).
-                        log::warn!(
-                            "download attempt {} for {} finalize failed: {}",
-                            attempt + 1,
-                            model.id,
-                            e
-                        );
-                        last_err = Some(e);
+        match try_download(&client, model, &partial_path, &mut on_progress, cancel).await {
+            Ok(()) => match verify_model_file(model, &partial_path, &mut on_progress, cancel).await
+            {
+                Ok(()) => {
+                    if let Some(ds) = cancel {
+                        ds.check_cancel()?;
                     }
-                },
+                    match finalize_model_file(&partial_path, file_path).await {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            // Keep partial so the next attempt can finalize without
+                            // re-fetching (handled at loop top).
+                            log::warn!(
+                                "download attempt {} for {} finalize failed: {}",
+                                attempt + 1,
+                                model.id,
+                                e
+                            );
+                            last_err = Some(e);
+                        }
+                    }
+                }
                 Err(e) => {
+                    if is_cancelled(&e) {
+                        return Err(e);
+                    }
                     let _ = std::fs::remove_file(&partial_path);
                     log::warn!(
                         "download attempt {} for {} failed verification: {}",
@@ -373,6 +416,9 @@ where
                 }
             },
             Err(e) => {
+                if is_cancelled(&e) {
+                    return Err(e);
+                }
                 let _ = std::fs::remove_file(&partial_path);
                 log::warn!(
                     "download attempt {} for {} failed: {}",
@@ -384,6 +430,9 @@ where
             }
         }
         if attempt < 2 {
+            if let Some(ds) = cancel {
+                ds.check_cancel()?;
+            }
             tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
         }
     }
@@ -394,10 +443,15 @@ async fn verify_model_file<F>(
     model: &ModelEntry,
     file_path: &PathBuf,
     on_progress: &mut F,
+    cancel: Option<&DownloadState>,
 ) -> Result<(), AppError>
 where
     F: FnMut(&str, f32) + Send,
 {
+    if let Some(ds) = cancel {
+        ds.check_cancel()?;
+    }
+
     if is_placeholder_checksum(&model.sha256) {
         log::warn!(
             "Skipping SHA-256 verification for {}: placeholder checksum",
@@ -439,10 +493,15 @@ async fn try_download<F>(
     model: &ModelEntry,
     file_path: &PathBuf,
     on_progress: &mut F,
+    cancel: Option<&DownloadState>,
 ) -> Result<(), AppError>
 where
     F: FnMut(&str, f32) + Send,
 {
+    if let Some(ds) = cancel {
+        ds.check_cancel()?;
+    }
+
     let response = client
         .get(&model.download_url)
         .send()
@@ -473,6 +532,9 @@ where
     on_progress("download", 0.0);
 
     while let Some(chunk) = stream.next().await {
+        if let Some(ds) = cancel {
+            ds.check_cancel()?;
+        }
         let chunk = chunk.map_err(|e| AppError::Model(format!("stream error: {}", e)))?;
         file.write_all(&chunk)
             .await
@@ -708,7 +770,7 @@ mod tests {
         download_to_file(&model, &path, |stage, pct| {
             stages.push(stage.to_string());
             progress_values.push(pct);
-        })
+        }, None)
         .await
         .unwrap();
         assert!(path.exists());
@@ -772,7 +834,7 @@ mod tests {
         download_to_file(&model, &path, |stage, pct| {
             stages.push(stage.to_string());
             progress_values.push(pct);
-        })
+        }, None)
         .await
         .unwrap();
         assert!(path.exists());
@@ -805,7 +867,7 @@ mod tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
-        download_to_file(&model, &path, |_, _| {})
+        download_to_file(&model, &path, |_, _| {}, None)
             .await
             .unwrap();
         assert!(path.exists());
@@ -832,7 +894,7 @@ mod tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("test.bin");
-        let err = download_to_file(&model, &path, |_, _| {})
+        let err = download_to_file(&model, &path, |_, _| {}, None)
             .await
             .expect_err("download should fail on SHA mismatch");
         assert!(
@@ -841,6 +903,193 @@ mod tests {
         );
         assert!(!path.exists());
         assert!(!partial_path_for(&path).exists());
+        handle.abort();
+    }
+
+    /// Serves `body` one byte at a time with a short delay so cancel can land mid-stream.
+    async fn spawn_slow_byte_server(body: Vec<u8>) -> (tokio::task::AbortHandle, u16) {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            if read_http_headers(&mut stream).await.is_err() {
+                return;
+            }
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            if stream.write_all(response.as_bytes()).await.is_err() {
+                return;
+            }
+            for byte in body {
+                if stream.write_all(&[byte]).await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            let _ = stream.flush().await;
+            let _ = stream.shutdown().await;
+        });
+        (handle.abort_handle(), port)
+    }
+
+    fn test_model_for_url(port: u16, body: &[u8], sha256: String) -> ModelEntry {
+        ModelEntry {
+            id: "test".into(),
+            name: "Test".into(),
+            file: "test.bin".into(),
+            size_bytes: body.len() as u64,
+            input_size: 0,
+            mean: vec![],
+            std: vec![],
+            license: "".into(),
+            source: "".into(),
+            download_url: format!("http://127.0.0.1:{}/test.bin", port),
+            sha256,
+            bundled: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn download_cancel_mid_stream_keeps_partial() {
+        let data = b"slow-bytes-for-cancel-test";
+        let expected_hash = compute_sha256(data);
+        let (handle, port) = spawn_slow_byte_server(data.to_vec()).await;
+        let model = test_model_for_url(port, data, expected_hash);
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test.bin");
+        let partial = partial_path_for(&path);
+
+        let state = DownloadState::new();
+        state.try_acquire().unwrap();
+        let path_for_task = path.clone();
+        let dl = {
+            let s = state.clone();
+            tokio::spawn(async move {
+                download_to_file(&model, &path_for_task, |_, _| {}, Some(&s)).await
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        state.cancel();
+        let err = dl.await.unwrap().expect_err("expected cancelled");
+        assert!(is_cancelled(&err), "got {err}");
+        assert!(!path.exists());
+        assert!(is_nonempty_file(&partial), "partial should be kept on cancel");
+        state.release();
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn download_cancel_before_finalize_after_sha_keeps_partial() {
+        let data = b"hello swiftmask";
+        let expected_hash = compute_sha256(data);
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test.bin");
+        let partial = partial_path_for(&path);
+        std::fs::write(&partial, data).unwrap();
+
+        let model = ModelEntry {
+            id: "test".into(),
+            name: "Test".into(),
+            file: "test.bin".into(),
+            size_bytes: data.len() as u64,
+            input_size: 0,
+            mean: vec![],
+            std: vec![],
+            license: "".into(),
+            source: "".into(),
+            download_url: "http://127.0.0.1:9/nope".into(),
+            sha256: expected_hash.clone(),
+            bundled: false,
+        };
+
+        let state = DownloadState::new();
+        state.try_acquire().unwrap();
+        let s = state.clone();
+        let mut saw_verify = false;
+        let err = download_to_file(
+            &model,
+            &path,
+            |stage, pct| {
+                if stage == "verify" && pct >= 100.0 {
+                    if saw_verify {
+                        s.cancel();
+                    } else {
+                        saw_verify = true;
+                    }
+                }
+            },
+            Some(&state),
+        )
+        .await
+        .expect_err("expected cancelled after verify");
+        assert!(is_cancelled(&err), "got {err}");
+        assert!(!path.exists(), "finalize should be skipped");
+        assert!(
+            is_nonempty_file(&partial),
+            "verified partial should remain without finalize"
+        );
+        assert_eq!(sha256_file(&partial).unwrap(), expected_hash);
+        state.release();
+    }
+
+    #[tokio::test]
+    async fn finish_beats_cancel_when_download_completes_first() {
+        let data = b"fast";
+        let expected_hash = compute_sha256(data);
+        let (handle, port) = spawn_local_server(data.to_vec()).await;
+        let model = test_model_for_url(port, data, expected_hash.clone());
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test.bin");
+
+        let state = DownloadState::new();
+        state.try_acquire().unwrap();
+        let s = state.clone();
+        let path_for_task = path.clone();
+        let dl = tokio::spawn(async move {
+            download_to_file(&model, &path_for_task, |_, _| {}, Some(&s)).await
+        });
+        // Wait until finalize has produced the final path (deterministic happens-before),
+        // then cancel — flag is too late to abort a completed transfer.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "download did not finalize in time"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        state.cancel();
+        dl.await.unwrap().expect("finish should beat cancel");
+        assert!(path.exists());
+        assert_eq!(sha256_file(&path).unwrap(), expected_hash);
+        state.release();
+        state.wait_until_idle().await;
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn second_download_to_file_rejects_when_slot_busy() {
+        let state = DownloadState::new();
+        state.try_acquire().unwrap();
+        let data = b"x";
+        let (handle, port) = spawn_local_server(data.to_vec()).await;
+        let model = test_model_for_url(port, data, compute_sha256(data));
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test.bin");
+
+        let err = state.try_acquire().unwrap_err();
+        assert!(err.to_string().contains("download already in progress"));
+
+        state.release();
+        download_to_file(&model, &path, |_, _| {}, None)
+            .await
+            .unwrap();
         handle.abort();
     }
 }

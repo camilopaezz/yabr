@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isDownloadCancelled } from "../lib/downloadCancel";
 import {
   FALLBACK_DEFAULT_MODE,
   isModelReady,
@@ -13,6 +14,7 @@ import {
   shouldShowNcBadge,
 } from "../lib/ncLicense";
 import {
+  invokeCancelDownload,
   invokeDownloadModel,
   invokeListModels,
   listenModelDownload,
@@ -31,11 +33,10 @@ export function ModeSelector() {
   const [downloadStage, setDownloadStage] = useState<"download" | "verify">(
     "download",
   );
+  const [cancelling, setCancelling] = useState(false);
+  const cancellingRef = useRef(false);
   const [ncAckModel, setNcAckModel] = useState<ModelMeta | null>(null);
-  /**
-   * Bumped on each new download session or cancel. Invalidates in-flight work
-   * (progress events, mode/badge updates) without a separate cancelled flag.
-   */
+  /** Bumped only when a new download starts; invalidates stale in-flight work. */
   const downloadSessionRef = useRef(0);
   const downloadPresence = useAnimatedPresence(Boolean(downloading));
   const ncAckPresence = useAnimatedPresence(Boolean(ncAckModel));
@@ -104,6 +105,7 @@ export function ModeSelector() {
         const unsub = await listenModelDownload((payload) => {
           if (payload.model_id !== modelId) return;
           if (!isCurrentSession()) return;
+          if (cancellingRef.current) return;
           setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
           setDownloadStage(payload.stage === "verify" ? "verify" : "download");
         });
@@ -114,7 +116,6 @@ export function ModeSelector() {
         unsubscribe = unsub;
 
         await invokeDownloadModel(modelId);
-        // Cancel/re-start bumps the session — ignore this completion.
         if (!isCurrentSession()) return;
 
         // Close the modal as soon as the backend finishes — do not wait on
@@ -136,8 +137,10 @@ export function ModeSelector() {
           console.error("failed to refresh models", err);
         }
       } catch (err: unknown) {
-        console.error("download failed", err);
-        if (isCurrentSession()) {
+        if (!isDownloadCancelled(err)) {
+          console.error("download failed", err);
+        }
+        if (isCurrentSession() && !cancellingRef.current) {
           setDownloading(null);
         }
       }
@@ -151,6 +154,8 @@ export function ModeSelector() {
 
   const beginDownload = (model: ModelMeta) => {
     downloadSessionRef.current += 1;
+    cancellingRef.current = false;
+    setCancelling(false);
     setDownloadProgress(0);
     setDownloadStage("download");
     setDownloading(model);
@@ -187,11 +192,34 @@ export function ModeSelector() {
   };
 
   const handleCancel = () => {
-    // Invalidate in-flight session so a late success does not set mode / badge.
-    downloadSessionRef.current += 1;
-    setDownloading(null);
-    setDownloadProgress(0);
-    setDownloadStage("download");
+    if (cancellingRef.current) return;
+    cancellingRef.current = true;
+    setCancelling(true);
+    // Capture session so a newer beginDownload does not get cleared / reconciled
+    // by this cancel's finally (list_models can outlive a re-start).
+    const session = downloadSessionRef.current;
+    void (async () => {
+      try {
+        await invokeCancelDownload();
+      } catch (err: unknown) {
+        console.error("failed to cancel download", err);
+      } finally {
+        if (downloadSessionRef.current !== session) {
+          return;
+        }
+        cancellingRef.current = false;
+        setCancelling(false);
+        setDownloading(null);
+        try {
+          const list = await invokeListModels();
+          if (downloadSessionRef.current === session) {
+            applyModels(list);
+          }
+        } catch (listErr: unknown) {
+          console.error("failed to refresh models", listErr);
+        }
+      }
+    })();
   };
 
   return (
@@ -292,9 +320,11 @@ export function ModeSelector() {
             className={`download-modal-card${downloadPresence.open ? " is-open" : ""}`}
           >
             <h3>
-              {downloadStage === "verify"
-                ? `Verifying ${displayModel.name}`
-                : `Downloading ${displayModel.name}`}
+              {cancelling
+                ? `Cancelling ${displayModel.name}…`
+                : downloadStage === "verify"
+                  ? `Verifying ${displayModel.name}`
+                  : `Downloading ${displayModel.name}`}
             </h3>
             <div className="progress-bar-track">
               <div
@@ -303,12 +333,19 @@ export function ModeSelector() {
               />
             </div>
             <div className="download-modal-pct">
-              {downloadStage === "verify"
-                ? "Verifying…"
-                : `${Math.round(downloadProgress)}%`}
+              {cancelling
+                ? "Cancelling…"
+                : downloadStage === "verify"
+                  ? "Verifying…"
+                  : `${Math.round(downloadProgress)}%`}
             </div>
-            <button type="button" onClick={handleCancel}>
-              Cancel
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={cancelling}
+              aria-disabled={cancelling}
+            >
+              {cancelling ? "Cancelling…" : "Cancel"}
             </button>
           </div>
         </div>

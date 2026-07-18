@@ -95,6 +95,10 @@ export function invokeDownloadModel(modelId: string): Promise<void> {
   return tauriInvoke("download_model", { modelId });
 }
 
+export function invokeCancelDownload(): Promise<void> {
+  return tauriInvoke("cancel_download");
+}
+
 export function listenModelDownload(
   handler: (payload: ModelDownloadPayload) => void,
 ): Promise<() => void> {
@@ -137,8 +141,8 @@ export function invokePickOutputDir(): Promise<string | null> {
   return tauriInvoke("pick_output_dir");
 }
 
-export function invokeCancelInference(): Promise<void> {
-  return tauriInvoke("cancel_inference");
+export function invokeCancelInference(jobId: string): Promise<void> {
+  return tauriInvoke("cancel_inference", { jobId });
 }
 
 /** Native path existence check (no frontend fs scope). */

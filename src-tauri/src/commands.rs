@@ -16,8 +16,9 @@ use crate::events::{
 };
 use crate::gpu::{BenchmarkResult, GpuInfo};
 use crate::job::{JobDeps, JobSink, ProcessingJob};
+use crate::download::DownloadState;
 use crate::models::ModelMeta;
-use crate::processing::ProcessingState;
+use crate::processing::{ProcessingSlotGuard, ProcessingState};
 
 struct AppJobSink {
     app: AppHandle,
@@ -116,8 +117,22 @@ pub async fn list_models(app: AppHandle) -> Result<Vec<ModelMeta>, AppError> {
 }
 
 #[tauri::command]
-pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), AppError> {
-    crate::models::download_model(&app, &model_id).await
+pub async fn download_model(
+    app: AppHandle,
+    state: State<'_, Arc<DownloadState>>,
+    model_id: String,
+) -> Result<(), AppError> {
+    crate::models::download_model(&app, state.inner(), &model_id).await
+}
+
+#[tauri::command]
+pub async fn cancel_download(state: State<'_, Arc<DownloadState>>) -> Result<(), AppError> {
+    if !state.is_busy() {
+        return Ok(());
+    }
+    state.cancel();
+    state.wait_until_idle().await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -126,10 +141,14 @@ pub async fn remove_image_background(
     state: State<'_, Arc<ProcessingState>>,
     args: ProcessingJob,
 ) -> Result<(), AppError> {
-    state.reset();
+    state.try_acquire(&args.id)?;
     let processing_state = state.inner().clone();
+    // Clone for JoinError recovery — the blocking task moves its own copy.
+    let processing_state_for_join = processing_state.clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Always clear busy — success, cancel, error, or panic inside catch_unwind.
+        let _guard = ProcessingSlotGuard(processing_state.clone());
         let job_id = args.id.clone();
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let sink = AppJobSink {
@@ -198,13 +217,30 @@ pub async fn remove_image_background(
         }
     })
     .await
-    .map_err(|e| AppError::Inference(e.to_string()))?;
+    .map_err(|e| {
+        // JoinError path: worker may have panicked before `_guard` ran, or
+        // the runtime aborted the task — ensure the slot is free either way.
+        processing_state_for_join.release();
+        AppError::Inference(e.to_string())
+    })?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn cancel_inference(state: State<'_, Arc<ProcessingState>>) -> Result<(), AppError> {
-    state.cancel();
+pub async fn cancel_inference(
+    state: State<'_, Arc<ProcessingState>>,
+    job_id: String,
+) -> Result<(), AppError> {
+    // Scoped: a late cancel for a finished job must not trip the next run.
+    // Only wait when this job was actually active — a stale id must not block
+    // on an unrelated worker holding the slot.
+    if state.cancel_job(&job_id) {
+        // Block until the worker releases the slot so a follow-up Process cannot
+        // race the still-running job (RAM spike from overlapping inference).
+        // Cancel is cooperative (checked between pipeline stages); long ORT
+        // inferring work may delay return until that stage finishes.
+        state.wait_until_idle().await;
+    }
     Ok(())
 }
 

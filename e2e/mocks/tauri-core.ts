@@ -1,5 +1,8 @@
 import { getMockState } from "./mockState";
 
+/** In-flight inference promise — cancel waits on this (mirrors wait_until_idle). */
+let activeInference: Promise<void> | null = null;
+
 export function invoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
@@ -27,6 +30,8 @@ export function invoke<T>(
       return Promise.resolve(state.config.models as T);
     case "download_model":
       return simulateDownload(args?.model_id as string) as Promise<T>;
+    case "cancel_download":
+      return Promise.resolve(undefined as T);
     case "pick_output_dir":
       return Promise.resolve(state.config.config.output_dir as T);
     case "remove_image_background": {
@@ -37,7 +42,8 @@ export function invoke<T>(
       return simulateInference(inner) as Promise<T>;
     }
     case "cancel_inference":
-      return Promise.resolve(undefined as T);
+      // Match production: resolve only after the in-flight worker finishes.
+      return (activeInference ?? Promise.resolve()) as Promise<T>;
     case "path_exists":
       return Promise.resolve(false as T);
     case "get_runtime_info":
@@ -57,7 +63,7 @@ function simulateInference(args: {
   const state = getMockState();
   const { id, outputPath } = args;
 
-  return new Promise((resolve) => {
+  const promise = new Promise<void>((resolve) => {
     const emit = (event: string, payload: unknown) => {
       for (const handler of state.listeners[event] ?? []) {
         handler({ payload });
@@ -90,7 +96,14 @@ function simulateInference(args: {
       });
       resolve();
     }, 250);
+  }).finally(() => {
+    if (activeInference === promise) {
+      activeInference = null;
+    }
   });
+
+  activeInference = promise;
+  return promise;
 }
 
 function simulateDownload(modelId: string): Promise<void> {

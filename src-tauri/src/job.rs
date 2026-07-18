@@ -156,6 +156,8 @@ fn run_inner(
     state.check_cancel()?;
     let timer = StageTimer::start("encoding");
     let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;
+    // Skip write if the user cancelled during encode (or earlier race).
+    state.check_cancel()?;
     std::fs::write(&job.output_path, output_bytes)?;
     stages.push(timer.finish());
 
@@ -163,6 +165,8 @@ fn run_inner(
         stages,
         total_seconds: job_start.elapsed().as_secs_f64(),
     };
+    // Do not emit done after cancel — finish must not beat cancel for the UI.
+    state.check_cancel()?;
     deps.sink.on_done(&job.output_path, &timings)?;
     Ok(())
 }
@@ -339,6 +343,68 @@ mod tests {
         assert!(sink.inner.done.lock().unwrap().is_none());
         // First progress fired; cancel before completing the pipeline.
         assert!(!sink.inner.progress.lock().unwrap().is_empty());
+        assert!(!output.exists());
+    }
+
+    /// Cancels when the encoding progress event fires — must not write output.
+    struct CancelOnEncoding {
+        state: Arc<ProcessingState>,
+        inner: Recorder,
+    }
+
+    impl JobSink for CancelOnEncoding {
+        fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError> {
+            self.inner.on_progress(stage, pct)?;
+            if stage == "encoding" {
+                self.state.cancel();
+            }
+            Ok(())
+        }
+
+        fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
+            self.inner.on_done(output_path, timings)
+        }
+
+        fn on_error(&self, message: &str) {
+            self.inner.on_error(message);
+        }
+
+        fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+            self.inner.on_fallback(reason, from_ep, to_ep)
+        }
+    }
+
+    #[test]
+    fn cancel_before_write_skips_output_file() {
+        let state = ProcessingState::new();
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.png");
+        let rgb = image::RgbImage::from_pixel(16, 16, image::Rgb([10, 20, 30]));
+        rgb.save(&input).unwrap();
+
+        let sink = CancelOnEncoding {
+            state: Arc::clone(&state),
+            inner: Recorder::new(),
+        };
+        let job = ProcessingJob {
+            id: "job-pre-write-cancel".into(),
+            input_path: input.to_string_lossy().into(),
+            output_path: output.to_string_lossy().into(),
+            model_id: "u2netp".into(),
+        };
+        let run_inference = run_inference_with_session(&load_u2netp);
+        let deps = JobDeps {
+            sink: &sink,
+            execution_provider: &ep_cpu,
+            model_is_ready: &ready_true,
+            run_inference: &run_inference,
+        };
+
+        let err = run(&job, &state, &deps).unwrap_err();
+        assert!(matches!(err, AppError::Cancelled));
+        assert_eq!(sink.inner.errors.lock().unwrap().as_slice(), ["cancelled"]);
+        assert!(sink.inner.done.lock().unwrap().is_none());
         assert!(!output.exists());
     }
 
