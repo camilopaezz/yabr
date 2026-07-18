@@ -81,7 +81,7 @@ export function ImagePanel() {
       ? null
       : cancelling
         ? "Cancelling…"
-        : `${statusLabel(current)}${current.error ? `: ${current.error}` : ""}`;
+        : `${statusLabel(current)}${current.error ? `: ${current.error.message}` : ""}`;
 
   return (
     <div className="image-panel">

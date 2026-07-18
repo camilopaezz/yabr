@@ -246,7 +246,7 @@ describe("currentImage", () => {
       expect(result).toBe("failed");
       const current = imageStore.getState().current;
       expect(current?.status).toBe("error");
-      expect(current?.error).toBe("command failed");
+      expect(current?.error).toEqual({ code: "unknown", message: "boom" });
       expect(current?.stage).toBeNull();
     });
 
@@ -509,7 +509,7 @@ describe("currentImage", () => {
       applyError({ id: "img-3", message: "out of memory" });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("error");
-      expect(current?.error).toBe("out of memory");
+      expect(current?.error).toEqual({ code: "oom", message: "out of memory" });
       expect(current?.stage).toBeNull();
     });
 
@@ -712,7 +712,7 @@ describe("currentImage", () => {
       });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("error");
-      expect(current?.error).toBe("out of memory");
+      expect(current?.error).toEqual({ code: "oom", message: "out of memory" });
       expect(current?.stage).toBeNull();
     });
 

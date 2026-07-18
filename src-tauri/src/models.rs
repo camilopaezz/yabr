@@ -506,7 +506,7 @@ where
         .get(&model.download_url)
         .send()
         .await
-        .map_err(|e| AppError::Model(format!("request failed: {}", e)))?;
+        .map_err(|e| AppError::Model(format!("request failed: {e}")))?;
 
     if !response.status().is_success() {
         return Err(AppError::Model(format!(
@@ -524,7 +524,7 @@ where
         .max(1);
     let mut file = tokio::fs::File::create(file_path)
         .await
-        .map_err(|e| AppError::Model(format!("create file failed: {}", e)))?;
+        .map_err(|e| crate::error::model_io_error("create file", e))?;
     let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
 
@@ -535,10 +535,10 @@ where
         if let Some(ds) = cancel {
             ds.check_cancel()?;
         }
-        let chunk = chunk.map_err(|e| AppError::Model(format!("stream error: {}", e)))?;
+        let chunk = chunk.map_err(|e| AppError::Model(format!("stream error: {e}")))?;
         file.write_all(&chunk)
             .await
-            .map_err(|e| AppError::Model(format!("write failed: {}", e)))?;
+            .map_err(|e| crate::error::model_io_error("write", e))?;
         downloaded += chunk.len() as u64;
         // Cap at 99% until the stream ends so verify is a distinct stage.
         let pct = ((downloaded as f32 / total as f32) * 100.0).min(99.0);
@@ -554,12 +554,12 @@ where
 
     file.flush()
         .await
-        .map_err(|e| AppError::Model(format!("flush failed: {}", e)))?;
+        .map_err(|e| crate::error::model_io_error("flush", e))?;
     // Ensure data is durable and the handle is fully closed before verify/rename
     // (Windows can otherwise race antivirus or share-mode opens).
     file.sync_all()
         .await
-        .map_err(|e| AppError::Model(format!("sync failed: {}", e)))?;
+        .map_err(|e| crate::error::model_io_error("sync", e))?;
     drop(file);
 
     on_progress("download", 100.0);

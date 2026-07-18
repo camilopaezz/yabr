@@ -27,7 +27,9 @@ impl DownloadState {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
-            return Err(AppError::Model("download already in progress".into()));
+            return Err(AppError::Model(
+                crate::error::MSG_DOWNLOAD_ALREADY_IN_PROGRESS.into(),
+            ));
         }
         self.cancel.store(false, Ordering::SeqCst);
         Ok(())

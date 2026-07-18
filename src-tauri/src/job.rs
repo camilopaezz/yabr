@@ -18,7 +18,7 @@ pub struct ProcessingJob {
 pub trait JobSink {
     fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError>;
     fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError>;
-    fn on_error(&self, message: &str);
+    fn on_error(&self, err: &AppError);
     fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError>;
 }
 
@@ -63,7 +63,7 @@ pub fn run(
 ) -> Result<(), AppError> {
     let result = run_inner(job, state, deps);
     if let Err(ref err) = result {
-        deps.sink.on_error(&err.to_string());
+        deps.sink.on_error(err);
     }
     result
 }
@@ -211,8 +211,11 @@ mod tests {
             Ok(())
         }
 
-        fn on_error(&self, message: &str) {
-            self.errors.lock().unwrap().push(message.to_string());
+        fn on_error(&self, err: &AppError) {
+            self.errors
+                .lock()
+                .unwrap()
+                .push(crate::error::error_message(err));
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -301,8 +304,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -365,8 +368,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -436,7 +439,8 @@ mod tests {
             err
         );
         let errors = recorder.errors.lock().unwrap();
-        assert_eq!(errors.as_slice(), [err.to_string()]);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0], crate::error::error_message(&err));
         assert!(recorder.done.lock().unwrap().is_none());
         assert!(!output.exists());
     }
@@ -739,8 +743,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {

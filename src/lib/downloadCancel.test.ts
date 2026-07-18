@@ -5,10 +5,16 @@ describe("isDownloadCancelled", () => {
   it("detects cancelled invoke errors", () => {
     expect(isDownloadCancelled(new Error("cancelled"))).toBe(true);
     expect(isDownloadCancelled("cancelled")).toBe(true);
+    expect(
+      isDownloadCancelled({ code: "cancelled", message: "cancelled" }),
+    ).toBe(true);
   });
 
   it("ignores other failures", () => {
     expect(isDownloadCancelled(new Error("download failed"))).toBe(false);
     expect(isDownloadCancelled(null)).toBe(false);
+    expect(
+      isDownloadCancelled({ code: "network", message: "request failed" }),
+    ).toBe(false);
   });
 });
