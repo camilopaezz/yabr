@@ -368,6 +368,10 @@ mod tests {
         fn on_error(&self, message: &str) {
             self.inner.on_error(message);
         }
+
+        fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
+            self.inner.on_fallback(reason, from_ep, to_ep)
+        }
     }
 
     #[test]
@@ -389,11 +393,12 @@ mod tests {
             output_path: output.to_string_lossy().into(),
             model_id: "u2netp".into(),
         };
+        let run_inference = run_inference_with_session(&load_u2netp);
         let deps = JobDeps {
             sink: &sink,
             execution_provider: &ep_cpu,
             model_is_ready: &ready_true,
-            load_model_bytes: &load_u2netp,
+            run_inference: &run_inference,
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
