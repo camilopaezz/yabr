@@ -57,6 +57,7 @@ function App() {
   const modalBlocksShortcuts = useUiStore(
     (state) => state.modalBlocksShortcuts,
   );
+  const notice = useUiStore((state) => state.notice);
   const { isDragging, paths } = useTauriFileDrop();
   const lastProcessedRef = useRef<string[] | null>(null);
   const themeSyncedRef = useRef(false);
@@ -204,7 +205,7 @@ function App() {
     Boolean(current.inputPath && current.outputPath);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${notice ? " has-notice" : ""}`}>
       <TitleBar
         ep={ep}
         settingsButtonRef={settingsButtonRef}

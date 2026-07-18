@@ -274,7 +274,6 @@ button:focus-visible {
 /* ── Shell ─────────────────────────────────────────────── */
 
 .app-shell {
-  position: relative;
   display: grid;
   grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
   grid-template-columns: minmax(220px, var(--rail-width)) minmax(0, 1fr);
@@ -288,6 +287,16 @@ button:focus-visible {
   background: var(--bg);
   color: var(--fg);
   overflow: hidden;
+}
+
+/* Notice sits under the titlebar in the preview column only — rail brand stays free.
+   Rail spans all three rows (contiguous rectangle). Empty grid cells avoided. */
+.app-shell.has-notice {
+  grid-template-rows: var(--titlebar-height) auto minmax(0, 1fr);
+  grid-template-areas:
+    "rail titlebar"
+    "rail notice"
+    "rail preview";
 }
 
 /* Custom window chrome (decorations: false). */
@@ -692,15 +701,10 @@ button.mode-option-download:disabled {
 }
 
 /* ── App notice (shared error/warning banner) ───────────── */
-/* Overlay under the title bar — do NOT participate in app-shell grid.
-   An unplaced grid child auto-fills a third row and leaves an empty
-   black cell in the preview column (see production screenshot). */
+/* Placed via app-shell.has-notice grid area "notice" (preview column only). */
 
 .app-notice {
-  position: absolute;
-  top: var(--titlebar-height);
-  left: 0;
-  right: 0;
+  grid-area: notice;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -709,9 +713,8 @@ button.mode-option-download:disabled {
   border-bottom: 1px solid var(--border);
   font-size: 0.875rem;
   line-height: 1.35;
-  z-index: 40;
+  min-width: 0;
   box-sizing: border-box;
-  /* Keep dismiss clickable above drag regions. */
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
