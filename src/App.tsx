@@ -14,10 +14,15 @@ import {
   syncOutputPath,
 } from "./lib/currentImage";
 import {
+  formatFirstRunGpuDegradeNotice,
+  formatModelsUnavailableNotice,
+} from "./lib/errorCopy";
+import {
   FALLBACK_DEFAULT_MODE,
   PREFERRED_DEFAULT_MODE,
   resolveMode,
 } from "./lib/models";
+import { showAppErrorNotice } from "./lib/showAppErrorNotice";
 import {
   invokeDetectGpu,
   invokeGetConfig,
@@ -95,6 +100,11 @@ function App() {
         if (!cancelled) {
           settingsStore.setState({ ep: "cpu" });
           setFirstRun(false);
+          showAppErrorNotice(err, {
+            severity: "warning",
+            copy: formatFirstRunGpuDegradeNotice(),
+            code: "first_run_gpu",
+          });
         }
       }
 
@@ -112,6 +122,11 @@ function App() {
         console.error("failed to list models during init", err);
         if (!cancelled) {
           settingsStore.setState({ mode: FALLBACK_DEFAULT_MODE });
+          showAppErrorNotice(err, {
+            severity: "warning",
+            copy: formatModelsUnavailableNotice(),
+            code: "first_run_models",
+          });
         }
       }
 

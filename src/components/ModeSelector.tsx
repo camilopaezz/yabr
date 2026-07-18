@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { isDownloadCancelled } from "../lib/downloadCancel";
-import { formatError } from "../lib/errorCopy";
+import {
+  formatDownloadCancelUnconfirmedNotice,
+  formatError,
+  formatModelsUnavailableNotice,
+} from "../lib/errorCopy";
 import {
   FALLBACK_DEFAULT_MODE,
   isModelReady,
@@ -15,6 +19,7 @@ import {
   shouldShowNcBadge,
 } from "../lib/ncLicense";
 import { parseAppError } from "../lib/parseAppError";
+import { showAppErrorNotice, showAppNotice } from "../lib/showAppErrorNotice";
 import {
   invokeCancelDownload,
   invokeDownloadModel,
@@ -95,6 +100,11 @@ export function ModeSelector() {
         // Catalog unavailable: force bundled Turbo so Process cannot target a
         // preferred-but-unverified model.
         setMode(FALLBACK_DEFAULT_MODE);
+        showAppErrorNotice(err, {
+          severity: "warning",
+          copy: formatModelsUnavailableNotice(),
+          code: "list_models",
+        });
       });
   }, []);
 
@@ -146,6 +156,12 @@ export function ModeSelector() {
           }
         } catch (err: unknown) {
           console.error("failed to refresh models", err);
+          // Download already finished; model is optimistically ready — soft notice.
+          showAppErrorNotice(err, {
+            severity: "warning",
+            copy: formatModelsUnavailableNotice(),
+            code: "list_models_refresh",
+          });
         }
       } catch (err: unknown) {
         if (isDownloadCancelled(err)) {
@@ -230,15 +246,25 @@ export function ModeSelector() {
     // by this cancel's finally (list_models can outlive a re-start).
     const session = downloadSessionRef.current;
     void (async () => {
+      let cancelFailed = false;
       try {
         await invokeCancelDownload();
       } catch (err: unknown) {
+        cancelFailed = true;
         console.error("failed to cancel download", err);
       } finally {
         if (downloadSessionRef.current === session) {
           cancellingRef.current = false;
           setCancelling(false);
           setDownloading(null);
+          if (cancelFailed) {
+            // UI already cleared; warn that the transfer may still complete.
+            showAppNotice(
+              formatDownloadCancelUnconfirmedNotice(),
+              "warning",
+              "download_cancel_unconfirmed",
+            );
+          }
           try {
             const list = await invokeListModels();
             if (downloadSessionRef.current === session) {
@@ -246,6 +272,11 @@ export function ModeSelector() {
             }
           } catch (listErr: unknown) {
             console.error("failed to refresh models", listErr);
+            showAppErrorNotice(listErr, {
+              severity: "warning",
+              copy: formatModelsUnavailableNotice(),
+              code: "list_models_refresh",
+            });
           }
         }
       }

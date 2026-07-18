@@ -7,7 +7,8 @@ import {
   prodStartProcessDeps,
   startProcess,
 } from "../lib/currentImage";
-import { formatError } from "../lib/errorCopy";
+import { formatError, formatRevealFailedNotice } from "../lib/errorCopy";
+import { showAppErrorNotice } from "../lib/showAppErrorNotice";
 import { type ImageItem, useImageStore } from "../stores/imageStore";
 import { ProgressBar } from "./ProgressBar";
 
@@ -71,6 +72,10 @@ export function ImagePanel() {
       await revealItemInDir(current.outputPath);
     } catch (err) {
       console.error("reveal in folder failed", err);
+      showAppErrorNotice(err, {
+        copy: formatRevealFailedNotice(),
+        code: "reveal_failed",
+      });
     }
   };
 

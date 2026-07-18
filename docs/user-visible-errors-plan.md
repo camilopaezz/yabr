@@ -145,10 +145,10 @@ Strangers never need DevTools. Failures and successful GPU→CPU fallback are vi
 
 ### PR3 — Full inventory
 
-- [ ] All inventory rows 1–14 from grill have a user-visible path
-- [ ] First-run soft-degrade + notice
-- [ ] Remaining copy entries
-- [ ] No new wire fields
+- [x] All inventory rows 1–14 from grill have a user-visible path
+- [x] First-run soft-degrade + notice
+- [x] Remaining copy entries
+- [x] No new wire fields
 
 ## Implementation notes (for agents)
 

@@ -109,3 +109,35 @@ export function formatFallbackNotice(fromEp: string, toEp: string): ErrorCopy {
     body: `GPU ran out of memory (${from} → ${to}). Settings still use your GPU for next runs.`,
   };
 }
+
+/** First-run GPU/benchmark soft-degrade (app continues on CPU). */
+export function formatFirstRunGpuDegradeNotice(): ErrorCopy {
+  return {
+    title: "Couldn't finish GPU setup",
+    body: "Using CPU. You can re-run the benchmark in Settings.",
+  };
+}
+
+/** First-run / catalog list_models soft-degrade (force bundled Turbo). */
+export function formatModelsUnavailableNotice(): ErrorCopy {
+  return {
+    title: "Couldn't load model list",
+    body: "Using Turbo (bundled). Try restarting the app.",
+  };
+}
+
+/** Cancel download invoke failed after UI already cleared the transfer. */
+export function formatDownloadCancelUnconfirmedNotice(): ErrorCopy {
+  return {
+    title: "Couldn't confirm cancel",
+    body: "The download may still finish in the background.",
+  };
+}
+
+/** Reveal-in-folder failed (opener plugin). */
+export function formatRevealFailedNotice(): ErrorCopy {
+  return {
+    title: "Couldn't show file in folder",
+    body: "Check that the output path still exists.",
+  };
+}
