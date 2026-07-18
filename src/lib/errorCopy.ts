@@ -92,6 +92,14 @@ export function formatError(code: string, message: string): ErrorCopy {
   }
   const entry = ERROR_COPY[code];
   if (entry) {
+    // Catalog `unknown` keeps the generic title but surfaces sanitized detail.
+    if (code === ERROR_CODES.unknown) {
+      const sanitized = sanitizeTechnicalMessage(message);
+      return {
+        title: entry.title,
+        body: sanitized && sanitized !== entry.title ? sanitized : entry.body,
+      };
+    }
     return { title: entry.title, body: entry.body };
   }
   const sanitized = sanitizeTechnicalMessage(message);

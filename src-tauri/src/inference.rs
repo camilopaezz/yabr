@@ -120,28 +120,11 @@ fn trim_process_working_set() {
 /// True when an inference error likely means GPU/system allocator failure.
 /// Used to drop cached sessions so DirectML/ORT can release committed memory.
 ///
-/// Prefer strong tokens (HRESULT, allocator names, full phrases). Avoid bare
-/// `"oom"` — it false-positives on words like "room" / "zoom" / "bloom".
+/// Aligned with wire catalog code `oom` via shared needles in
+/// [`crate::error::looks_like_oom_message`] / [`crate::error::error_code`].
+/// Avoid bare `"oom"` — it false-positives on words like "room" / "zoom".
 pub fn is_likely_oom(err: &AppError) -> bool {
-    let msg = err.to_string().to_ascii_lowercase();
-    const NEEDLES: &[&str] = &[
-        "8007000e",
-        "e_outofmemory",
-        "out of memory",
-        "out_of_memory",
-        "not enough memory",
-        "insufficient memory",
-        "dmlcommittedresourceallocator",
-        "suficientes recursos de memoria",
-        "recursos de memoria disponibles",
-        "failed to allocate",
-        "allocation failure",
-        "cuda_error_out_of_memory",
-        "memory allocation failed",
-        "std::bad_alloc",
-        "bad_alloc",
-    ];
-    NEEDLES.iter().any(|n| msg.contains(n))
+    crate::error::error_code(err) == crate::error::code::OOM
 }
 
 /// Drop sessions *outside* the cache mutex, then trim the process working set.

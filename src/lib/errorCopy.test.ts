@@ -24,6 +24,12 @@ describe("formatError", () => {
     );
   });
 
+  it("keeps unknown title and attaches sanitized body", () => {
+    const copy = formatError("unknown", "permission denied");
+    expect(copy.title).toBe("Something went wrong");
+    expect(copy.body).toBe("permission denied");
+  });
+
   it("handles cancelled without treating as failure chrome", () => {
     expect(formatError("cancelled", "cancelled").title).toBe("Cancelled");
   });

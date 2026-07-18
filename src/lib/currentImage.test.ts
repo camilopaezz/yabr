@@ -508,10 +508,13 @@ describe("currentImage", () => {
         ...makeReadyItem({ id: "img-3" }),
         status: "processing",
       });
-      applyError({ id: "img-3", message: "out of memory" });
+      applyError({ id: "img-3", code: "oom", message: "CUDA out of memory" });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("error");
-      expect(current?.error).toEqual({ code: "oom", message: "out of memory" });
+      expect(current?.error).toEqual({
+        code: "oom",
+        message: "CUDA out of memory",
+      });
       expect(current?.stage).toBeNull();
     });
 
@@ -529,7 +532,7 @@ describe("currentImage", () => {
         ...makeReadyItem({ id: "img-4" }),
         status: "processing",
       });
-      applyError({ id: "img-4", message: "cancelled" });
+      applyError({ id: "img-4", code: "cancelled", message: "cancelled" });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("cancelled");
       expect(current?.error).toBeNull();
@@ -710,11 +713,18 @@ describe("currentImage", () => {
       });
       await initCurrentImageListeners();
       handlers["inference:error"]({
-        payload: { id: "img-3", message: "out of memory" },
+        payload: {
+          id: "img-3",
+          code: "oom",
+          message: "CUDA out of memory",
+        },
       });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("error");
-      expect(current?.error).toEqual({ code: "oom", message: "out of memory" });
+      expect(current?.error).toEqual({
+        code: "oom",
+        message: "CUDA out of memory",
+      });
       expect(current?.stage).toBeNull();
     });
 
@@ -727,7 +737,7 @@ describe("currentImage", () => {
       });
       await initCurrentImageListeners();
       handlers["inference:error"]({
-        payload: { id: "img-4", message: "cancelled" },
+        payload: { id: "img-4", code: "cancelled", message: "cancelled" },
       });
       const current = imageStore.getState().current;
       expect(current?.status).toBe("cancelled");

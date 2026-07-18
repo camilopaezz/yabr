@@ -89,7 +89,8 @@ fn run_inner(
     deps.sink.on_progress("decoding", 10.0)?;
     state.check_cancel()?;
     let timer = StageTimer::start("decoding");
-    let image_bytes = std::fs::read(&job.input_path)?;
+    let image_bytes = std::fs::read(&job.input_path)
+        .map_err(|e| crate::error::image_decode_error(format!("open input: {e}")))?;
     let img = crate::image_io::decode(&image_bytes)?;
     drop(image_bytes);
     let original_size = (img.width(), img.height());
@@ -158,7 +159,8 @@ fn run_inner(
     let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;
     // Skip write if the user cancelled during encode (or earlier race).
     state.check_cancel()?;
-    std::fs::write(&job.output_path, output_bytes)?;
+    std::fs::write(&job.output_path, output_bytes)
+        .map_err(crate::error::output_write_error)?;
     stages.push(timer.finish());
 
     let timings = JobTimings {
@@ -434,9 +436,13 @@ mod tests {
 
         let err = run(&job, &state, &deps).unwrap_err();
         assert!(
-            matches!(err, AppError::Io(_)),
-            "expected Io error, got {:?}",
+            matches!(&err, AppError::ImageIo(msg) if msg.starts_with("open input:")),
+            "expected image open error, got {:?}",
             err
+        );
+        assert_eq!(
+            crate::error::error_code(&err),
+            crate::error::code::IMAGE_UNREADABLE
         );
         let errors = recorder.errors.lock().unwrap();
         assert_eq!(errors.len(), 1);

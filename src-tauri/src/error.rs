@@ -78,20 +78,53 @@ pub fn model_io_error(op: &str, e: std::io::Error) -> AppError {
     }
 }
 
+/// Decode/open failures → wire code [`code::IMAGE_UNREADABLE`].
+pub fn image_decode_error(detail: impl Into<String>) -> AppError {
+    AppError::ImageIo(detail.into())
+}
+
+/// Encode failures → wire code [`code::OUTPUT_FAILED`] (message tagged `encode:`).
+pub fn image_encode_error(detail: impl Into<String>) -> AppError {
+    AppError::ImageIo(format!("encode: {}", detail.into()))
+}
+
+/// Output-path write failures → `disk_full` when full, else [`code::OUTPUT_FAILED`].
+pub fn output_write_error(e: std::io::Error) -> AppError {
+    if is_storage_full(&e) {
+        AppError::Io(e)
+    } else {
+        AppError::ImageIo(format!("output write: {e}"))
+    }
+}
+
+/// Config file IO → `disk_full` when full, else [`code::CONFIG`].
+pub fn config_io_error(e: std::io::Error) -> AppError {
+    if is_storage_full(&e) {
+        AppError::Io(e)
+    } else {
+        AppError::Config(e.to_string())
+    }
+}
+
 pub fn is_storage_full(err: &std::io::Error) -> bool {
     if matches!(err.kind(), std::io::ErrorKind::StorageFull) {
         return true;
     }
-    // ENOSPC (Unix) / ERROR_DISK_FULL (Windows) when kind is Other on some targets.
-    match err.raw_os_error() {
-        Some(28) | Some(112) => true,
-        _ => {
-            let msg = err.to_string().to_ascii_lowercase();
-            msg.contains("no space left")
-                || msg.contains("not enough space")
-                || msg.contains("disk full")
-        }
+    // Prefer platform-correct errno when kind is Other (common on some targets).
+    // Linux ENOSPC = 28; Windows ERROR_DISK_FULL = 112.
+    // Do NOT OR both: Linux 112 is EHOSTDOWN, Windows 28 is ERROR_OUT_OF_PAPER.
+    #[cfg(unix)]
+    if err.raw_os_error() == Some(28) {
+        return true;
     }
+    #[cfg(windows)]
+    if err.raw_os_error() == Some(112) {
+        return true;
+    }
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("no space left")
+        || msg.contains("not enough space")
+        || msg.contains("disk full")
 }
 
 /// Product catalog code for FE copy maps and control flow (`cancelled`, `busy`, …).
@@ -103,7 +136,7 @@ pub fn error_code(err: &AppError) -> &'static str {
         AppError::Gpu(_) => code::GPU,
         AppError::Config(_) => code::CONFIG,
         AppError::Dialog(_) => code::DIALOG,
-        AppError::ImageIo(_) => code::IMAGE_UNREADABLE,
+        AppError::ImageIo(msg) => classify_image_io(msg),
         AppError::Pipeline(_) => code::INFERENCE_FAILED,
         AppError::Io(e) => {
             if is_storage_full(e) {
@@ -117,19 +150,28 @@ pub fn error_code(err: &AppError) -> &'static str {
     }
 }
 
+fn classify_image_io(msg: &str) -> &'static str {
+    // Construction helpers tag encode/write so decode stays image_unreadable.
+    let lower = msg.to_ascii_lowercase();
+    if lower.starts_with("encode:") || lower.starts_with("output write:") {
+        code::OUTPUT_FAILED
+    } else {
+        code::IMAGE_UNREADABLE
+    }
+}
+
 fn classify_inference(msg: &str) -> &'static str {
     if msg == MSG_ALREADY_PROCESSING {
         return code::BUSY;
     }
-    // Keep in sync with `inference::is_likely_oom` needles (message body only).
-    if message_looks_like_oom(msg) {
+    if looks_like_oom_message(msg) {
         return code::OOM;
     }
     code::INFERENCE_FAILED
 }
 
-/// Needles mirrored from `inference::is_likely_oom` (avoid module cycle).
-fn message_looks_like_oom(msg: &str) -> bool {
+/// Shared OOM needles for wire `oom` and GPU→CPU fallback (`is_likely_oom`).
+pub fn looks_like_oom_message(msg: &str) -> bool {
     let lower = msg.to_ascii_lowercase();
     const NEEDLES: &[&str] = &[
         "8007000e",
@@ -254,9 +296,27 @@ mod tests {
             error_code(&AppError::ImageIo("bad png".into())),
             code::IMAGE_UNREADABLE
         );
+        assert_eq!(
+            error_code(&image_encode_error("png write failed")),
+            code::OUTPUT_FAILED
+        );
+        assert_eq!(
+            error_code(&output_write_error(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "access denied"
+            ))),
+            code::OUTPUT_FAILED
+        );
         assert_eq!(error_code(&AppError::Gpu("lspci failed".into())), code::GPU);
         assert_eq!(
             error_code(&AppError::Config("invalid ep".into())),
+            code::CONFIG
+        );
+        assert_eq!(
+            error_code(&config_io_error(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "access denied"
+            ))),
             code::CONFIG
         );
         assert_eq!(
@@ -270,6 +330,24 @@ mod tests {
         let e = std::io::Error::new(std::io::ErrorKind::Other, "No space left on device");
         assert!(is_storage_full(&e));
         assert_eq!(error_code(&AppError::Io(e)), code::DISK_FULL);
+    }
+
+    #[test]
+    fn storage_full_does_not_treat_wrong_platform_errno_as_disk() {
+        // Linux EHOSTDOWN / Windows ERROR_OUT_OF_PAPER must not hard-match.
+        #[cfg(unix)]
+        {
+            let e = std::io::Error::from_raw_os_error(112);
+            assert!(!is_storage_full(&e), "Linux 112 is EHOSTDOWN, not ENOSPC");
+        }
+        #[cfg(windows)]
+        {
+            let e = std::io::Error::from_raw_os_error(28);
+            assert!(
+                !is_storage_full(&e),
+                "Windows 28 is ERROR_OUT_OF_PAPER, not ERROR_DISK_FULL"
+            );
+        }
     }
 
     #[test]
