@@ -40,6 +40,7 @@ export type RuntimeInfo = {
 
 export type InferenceErrorPayload = {
   id: string;
+  code: string;
   message: string;
 };
 

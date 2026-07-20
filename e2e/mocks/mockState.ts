@@ -20,11 +20,21 @@ export type MockConfig = {
   models: ModelMeta[];
 };
 
+/** How `remove_image_background` behaves in mocked E2E. */
+export type InferenceMockMode = "success" | "error" | "fallback";
+
 export type MockState = {
   config: MockConfig;
   listeners: Record<string, Array<(event: { payload: unknown }) => void>>;
   calls: { cmd: string; args: unknown }[];
   fixtureBytes: Uint8Array;
+  /** Default success. Set before Process for error/fallback paths. */
+  inferenceMode?: InferenceMockMode;
+  /**
+   * When true, the next `download_model` rejects with a structured network error
+   * and the flag is cleared.
+   */
+  failNextDownload?: boolean;
 };
 
 /** Mock list_models payload: generated static registry + runtime downloaded flags. */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import appLogoSvg from "./assets/app-logo.svg?raw";
+import { AppNotice } from "./components/AppNotice";
 import { FileBlock } from "./components/FileBlock";
 import { ImagePanel } from "./components/ImagePanel";
 import { InlineSvg } from "./components/InlineSvg";
@@ -13,10 +14,15 @@ import {
   syncOutputPath,
 } from "./lib/currentImage";
 import {
+  formatFirstRunGpuDegradeNotice,
+  formatModelsUnavailableNotice,
+} from "./lib/errorCopy";
+import {
   FALLBACK_DEFAULT_MODE,
   PREFERRED_DEFAULT_MODE,
   resolveMode,
 } from "./lib/models";
+import { showAppErrorNotice } from "./lib/showAppErrorNotice";
 import {
   invokeDetectGpu,
   invokeGetConfig,
@@ -51,6 +57,7 @@ function App() {
   const modalBlocksShortcuts = useUiStore(
     (state) => state.modalBlocksShortcuts,
   );
+  const notice = useUiStore((state) => state.notice);
   const { isDragging, paths } = useTauriFileDrop();
   const lastProcessedRef = useRef<string[] | null>(null);
   const themeSyncedRef = useRef(false);
@@ -94,6 +101,11 @@ function App() {
         if (!cancelled) {
           settingsStore.setState({ ep: "cpu" });
           setFirstRun(false);
+          showAppErrorNotice(err, {
+            severity: "warning",
+            copy: formatFirstRunGpuDegradeNotice(),
+            code: "first_run_gpu",
+          });
         }
       }
 
@@ -111,6 +123,11 @@ function App() {
         console.error("failed to list models during init", err);
         if (!cancelled) {
           settingsStore.setState({ mode: FALLBACK_DEFAULT_MODE });
+          showAppErrorNotice(err, {
+            severity: "warning",
+            copy: formatModelsUnavailableNotice(),
+            code: "first_run_models",
+          });
         }
       }
 
@@ -188,12 +205,14 @@ function App() {
     Boolean(current.inputPath && current.outputPath);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${notice ? " has-notice" : ""}`}>
       <TitleBar
         ep={ep}
         settingsButtonRef={settingsButtonRef}
         onOpenSettings={() => setSettingsVisible(true)}
       />
+
+      <AppNotice />
 
       {/* U14: first-run acceleration detector only — not a generic cold-start splash. */}
       {firstRun && (

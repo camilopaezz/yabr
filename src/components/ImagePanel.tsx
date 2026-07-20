@@ -7,6 +7,8 @@ import {
   prodStartProcessDeps,
   startProcess,
 } from "../lib/currentImage";
+import { formatError, formatRevealFailedNotice } from "../lib/errorCopy";
+import { showAppErrorNotice } from "../lib/showAppErrorNotice";
 import { type ImageItem, useImageStore } from "../stores/imageStore";
 import { ProgressBar } from "./ProgressBar";
 
@@ -70,18 +72,25 @@ export function ImagePanel() {
       await revealItemInDir(current.outputPath);
     } catch (err) {
       console.error("reveal in folder failed", err);
+      showAppErrorNotice(err, {
+        copy: formatRevealFailedNotice(),
+        code: "reveal_failed",
+      });
     }
   };
 
   // While processing, ProgressBar already shows stage + % — skip duplicate status line.
   // During cancel wait status is already "cancelled" but Cancel chrome is still up.
+  const errorTitle = current?.error
+    ? formatError(current.error.code, current.error.message).title
+    : null;
   const statusText = !current
     ? "No image selected"
     : isProcessing
       ? null
       : cancelling
         ? "Cancelling…"
-        : `${statusLabel(current)}${current.error ? `: ${current.error}` : ""}`;
+        : `${statusLabel(current)}${errorTitle ? `: ${errorTitle}` : ""}`;
 
   return (
     <div className="image-panel">

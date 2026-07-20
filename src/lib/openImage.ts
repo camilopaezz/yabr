@@ -4,6 +4,7 @@ import {
   isProcessBusy,
   type ProcessSettings,
 } from "./currentImage";
+import { showAppErrorNotice } from "./showAppErrorNotice";
 
 export async function pickImagePath(): Promise<string | null> {
   const selected = await open({
@@ -31,6 +32,7 @@ export async function openImageFile(
     return acceptDrop([path], settings);
   } catch (err) {
     console.error("open image dialog failed", err);
+    showAppErrorNotice(err);
     return false;
   }
 }
