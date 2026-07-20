@@ -8,7 +8,8 @@ Version numbers must stay in sync across `package.json`, `src-tauri/Cargo.toml`,
 
 ### Added
 
-- (changes landing on `dev` but not yet released)
+- User-facing README: download/install steps, screenshots, keyboard shortcuts, troubleshooting
+- Screenshots under `docs/screenshots/` for the main window, quality modes, and before/after results
 
 ## [0.1.0] - 2026-07-12
 
@@ -18,5 +19,5 @@ Version numbers must stay in sync across `package.json`, `src-tauri/Cargo.toml`,
 - Quality modes: Turbo (bundled), Balanced, Balanced+, Max Quality
 - GPU benchmark, model downloads with SHA-256 verification, compare slider export
 
-[Unreleased]: https://github.com/camilopaezz/yabr/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/camilopaezz/yabr/releases/tag/v0.1.0
+[Unreleased]: https://github.com/camilopaezz/SwiftMask/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/camilopaezz/SwiftMask/releases/tag/v0.1.0

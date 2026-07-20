@@ -63,8 +63,8 @@ These are easy to get wrong if you only skim the code.
 
 - **Targets (v1):** NSIS (Windows x64), AppImage (Linux x64). Installer ~30 MB + lazy models.
 - **Signing:** Windows builds unsigned for now (SmartScreen expected). Updater key pair planned for A16; not wired yet.
-- **CI:** Windows + Ubuntu builds; installers as artifacts (14-day retention). No GitHub Releases workflow yet.
-- **Known gap:** Linux AppImage may need `libonnxruntime.so` rpath (`-Wl,-rpath,$ORIGIN`) — see tauri#4724.
+- **CI:** Windows + Ubuntu builds; installers as artifacts (14-day retention). **Release workflow** exists (`.github/workflows/release.yml`); first public tag still pending.
+- **Linux AppImage:** core ORT is **statically linked** via `ort` `download-binaries` — the classic dynamic `libonnxruntime.so` rpath footgun does **not** apply. Ubuntu CI AppImages validated outside CI (Arch, including CUDA). Remaining work is install docs + host NVIDIA deps for CUDA, not an AppImage rpath patch. Details: [`production-readiness.md`](production-readiness.md) §2.3.
 
 ---
 
@@ -74,7 +74,7 @@ These are easy to get wrong if you only skim the code.
 |---|---|---|
 | 0–7 Scaffold → output polish | ✅ | MVP surface complete |
 | 8 E2E | 🟡 | Mocked Playwright on every PR to `main`; real Tauri WebDriver not wired. See `production-readiness.md` §2.2 |
-| 9 Distribution | ⬜ | Artifacts in CI; missing Releases, updater, signing, CHANGELOG, in-app NC notice, screenshots |
+| 9 Distribution | 🟡 | Release workflow + CHANGELOG + NC notice + user README/screenshots done; missing published tag, updater/signing |
 
 **Out of scope for v1:** macOS/CoreML, ROCm, batch queue, mask threshold controls, background replacement, video, tiling >4096 px, manual mask editor.
 
@@ -86,7 +86,7 @@ These are easy to get wrong if you only skim the code.
 |---|---|
 | DirectML slower than CPU on Vega-class iGPUs | First-run benchmark picks CPU if it wins; user can override. |
 | `RMBG-2.0` / BiRefNet OOM on low-VRAM iGPUs | Catch OOM at session load, fall back to CPU, show a UI notice. |
-| Linux `libonnxruntime.so` rpath break in AppImage | `.cargo/config.toml` rpath fix; verify in CI. |
+| Linux AppImage fails for strangers | Static ORT linkage; AppImage bundles GTK/WebKit via linuxdeploy; CI AppImages validated on Arch incl. CUDA. Document NVIDIA host deps + WebKit workarounds. |
 | HuggingFace download flakiness | Retry with backoff, resume via `Range`, verify SHA-256. |
 | BRIA license drift | Pin exact model revisions by commit SHA; document CC-BY-NC in README and in-app. |
 | ONNX opset 19 DeformConv not in stable ORT | RMBG/BiRefNet exports we use are opset ≤17; revisit if switching export style. |
