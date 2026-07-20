@@ -22,6 +22,8 @@ interface Window {
     listeners: Record<string, Array<(event: { payload: unknown }) => void>>;
     calls: { cmd: string; args: unknown }[];
     fixtureBytes: Uint8Array;
+    inferenceMode?: "success" | "error" | "fallback";
+    failNextDownload?: boolean;
   };
   __swiftmaskInjectDrop?: (paths: string[]) => void;
 }

@@ -18,7 +18,7 @@ pub struct ProcessingJob {
 pub trait JobSink {
     fn on_progress(&self, stage: &str, pct: f32) -> Result<(), AppError>;
     fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError>;
-    fn on_error(&self, message: &str);
+    fn on_error(&self, err: &AppError);
     fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError>;
 }
 
@@ -63,7 +63,7 @@ pub fn run(
 ) -> Result<(), AppError> {
     let result = run_inner(job, state, deps);
     if let Err(ref err) = result {
-        deps.sink.on_error(&err.to_string());
+        deps.sink.on_error(err);
     }
     result
 }
@@ -89,7 +89,8 @@ fn run_inner(
     deps.sink.on_progress("decoding", 10.0)?;
     state.check_cancel()?;
     let timer = StageTimer::start("decoding");
-    let image_bytes = std::fs::read(&job.input_path)?;
+    let image_bytes = std::fs::read(&job.input_path)
+        .map_err(|e| crate::error::image_decode_error(format!("open input: {e}")))?;
     let img = crate::image_io::decode(&image_bytes)?;
     drop(image_bytes);
     let original_size = (img.width(), img.height());
@@ -158,7 +159,8 @@ fn run_inner(
     let output_bytes = crate::image_io::encode_png_rgba(&rgb, &alpha)?;
     // Skip write if the user cancelled during encode (or earlier race).
     state.check_cancel()?;
-    std::fs::write(&job.output_path, output_bytes)?;
+    std::fs::write(&job.output_path, output_bytes)
+        .map_err(crate::error::output_write_error)?;
     stages.push(timer.finish());
 
     let timings = JobTimings {
@@ -211,8 +213,11 @@ mod tests {
             Ok(())
         }
 
-        fn on_error(&self, message: &str) {
-            self.errors.lock().unwrap().push(message.to_string());
+        fn on_error(&self, err: &AppError) {
+            self.errors
+                .lock()
+                .unwrap()
+                .push(crate::error::error_message(err));
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -301,8 +306,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -365,8 +370,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {
@@ -431,12 +436,17 @@ mod tests {
 
         let err = run(&job, &state, &deps).unwrap_err();
         assert!(
-            matches!(err, AppError::Io(_)),
-            "expected Io error, got {:?}",
+            matches!(&err, AppError::ImageIo(msg) if msg.starts_with("open input:")),
+            "expected image open error, got {:?}",
             err
         );
+        assert_eq!(
+            crate::error::error_code(&err),
+            crate::error::code::IMAGE_UNREADABLE
+        );
         let errors = recorder.errors.lock().unwrap();
-        assert_eq!(errors.as_slice(), [err.to_string()]);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0], crate::error::error_message(&err));
         assert!(recorder.done.lock().unwrap().is_none());
         assert!(!output.exists());
     }
@@ -739,8 +749,8 @@ mod tests {
             self.inner.on_done(output_path, timings)
         }
 
-        fn on_error(&self, message: &str) {
-            self.inner.on_error(message);
+        fn on_error(&self, err: &AppError) {
+            self.inner.on_error(err);
         }
 
         fn on_fallback(&self, reason: &str, from_ep: &str, to_ep: &str) -> Result<(), AppError> {

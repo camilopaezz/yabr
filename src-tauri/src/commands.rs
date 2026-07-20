@@ -52,12 +52,13 @@ impl JobSink for AppJobSink {
             .map_err(|e| AppError::Inference(e.to_string()))
     }
 
-    fn on_error(&self, message: &str) {
+    fn on_error(&self, err: &AppError) {
         let _ = self.app.emit(
             INFERENCE_ERROR,
             InferenceErrorPayload {
                 id: self.id.clone(),
-                message: message.to_string(),
+                code: crate::error::error_code(err).to_string(),
+                message: crate::error::error_message(err),
             },
         );
     }
@@ -210,6 +211,7 @@ pub async fn remove_image_background(
                     INFERENCE_ERROR,
                     InferenceErrorPayload {
                         id: job_id,
+                        code: crate::error::code::UNKNOWN.to_string(),
                         message: "worker panic".to_string(),
                     },
                 );

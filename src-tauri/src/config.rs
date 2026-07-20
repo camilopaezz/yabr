@@ -34,18 +34,20 @@ pub fn load_config(app: &AppHandle) -> Result<Config, AppError> {
     if !path.exists() {
         return Ok(Config::default());
     }
-    let bytes = std::fs::read(&path)?;
-    let config = serde_json::from_slice(&bytes)?;
+    let bytes = std::fs::read(&path).map_err(crate::error::config_io_error)?;
+    let config = serde_json::from_slice(&bytes)
+        .map_err(|e| AppError::Config(format!("parse config: {e}")))?;
     Ok(config)
 }
 
 pub fn save_config(app: &AppHandle, config: &Config) -> Result<(), AppError> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(crate::error::config_io_error)?;
     }
-    let bytes = serde_json::to_vec_pretty(config)?;
-    std::fs::write(&path, bytes)?;
+    let bytes = serde_json::to_vec_pretty(config)
+        .map_err(|e| AppError::Config(format!("serialize config: {e}")))?;
+    std::fs::write(&path, bytes).map_err(crate::error::config_io_error)?;
     Ok(())
 }
 

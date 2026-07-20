@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { epLabel } from "../lib/epLabel";
+import { showAppErrorNotice } from "../lib/showAppErrorNotice";
 import {
   invokeDetectGpu,
   invokeGetConfig,
@@ -48,10 +49,16 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
     if (!visible) return;
     invokeDetectGpu()
       .then((info) => setGpuInfo(info))
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.error("detect_gpu failed", err);
+        showAppErrorNotice(err);
+      });
     invokeGetRuntimeInfo()
       .then((info) => setRuntimeInfo(info))
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.error("get_runtime_info failed", err);
+        showAppErrorNotice(err);
+      });
   }, [visible, setGpuInfo, setRuntimeInfo]);
 
   const handleEpChange = async (value: string) => {
@@ -60,6 +67,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       setEpInStore(value);
     } catch (err) {
       console.error("set_ep failed", err);
+      showAppErrorNotice(err);
     }
   };
 
@@ -71,6 +79,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       }
     } catch (err) {
       console.error("pick_output_dir failed", err);
+      showAppErrorNotice(err);
     }
   };
 
@@ -82,6 +91,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       setEpInStore(config.execution_provider);
     } catch (err) {
       console.error("benchmark failed", err);
+      showAppErrorNotice(err);
     } finally {
       setLoading(false);
     }

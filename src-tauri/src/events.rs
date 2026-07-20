@@ -41,6 +41,9 @@ pub struct RuntimeInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InferenceErrorPayload {
     pub id: String,
+    /// Stable catalog code (see `error::code`).
+    pub code: String,
+    /// Technical detail for diagnostics / unmapped FE fallback.
     pub message: String,
 }
 

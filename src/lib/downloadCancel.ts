@@ -1,5 +1,6 @@
-/** Matches backend `AppError::Cancelled` serialized for Tauri invoke. */
+import { isCancelledError } from "./parseAppError";
+
+/** True when a download invoke failed because the user cancelled. */
 export function isDownloadCancelled(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  return message === "cancelled";
+  return isCancelledError(err);
 }

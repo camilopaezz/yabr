@@ -30,7 +30,9 @@ impl ProcessingState {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
-            return Err(AppError::Inference("already processing".into()));
+            return Err(AppError::Inference(
+                crate::error::MSG_ALREADY_PROCESSING.into(),
+            ));
         }
         self.cancel.store(false, Ordering::SeqCst);
         *self

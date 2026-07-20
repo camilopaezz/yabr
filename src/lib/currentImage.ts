@@ -1,17 +1,22 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { type ImageItem, imageStore } from "../stores/imageStore";
 import { settingsStore } from "../stores/settingsStore";
+import { uiStore } from "../stores/uiStore";
+import { formatFallbackNotice } from "./errorCopy";
 import { shouldProceedWithOverwrite } from "./overwrite";
+import { ERROR_CODES, parseAppError } from "./parseAppError";
 import { deriveOutputPath } from "./path";
 import {
   type InferenceDonePayload,
   type InferenceErrorPayload,
+  type InferenceFallbackPayload,
   type InferenceProgressPayload,
   invokeCancelInference,
   invokePathExists,
   invokeRemoveImageBackground,
   listenInferenceDone,
   listenInferenceError,
+  listenInferenceFallback,
   listenInferenceProgress,
 } from "./tauri";
 
@@ -208,18 +213,27 @@ export async function startProcess(
         modelId: settings.mode,
       });
       return "started";
-    } catch {
+    } catch (err: unknown) {
       // e.g. backend "already processing" — do not leave status stuck on processing.
       if (activeRunId === runId) {
         activeRunId = null;
       }
       const still = imageStore.getState().current;
       if (still?.id === startedId && still.status === "processing") {
-        imageStore.getState().patch({
-          status: "error",
-          stage: null,
-          error: "command failed",
-        });
+        const parsed = parseAppError(err);
+        if (parsed.code === ERROR_CODES.cancelled) {
+          imageStore.getState().patch({
+            status: "cancelled",
+            stage: null,
+            error: null,
+          });
+        } else {
+          imageStore.getState().patch({
+            status: "error",
+            stage: null,
+            error: { code: parsed.code, message: parsed.message },
+          });
+        }
       }
       return "failed";
     }
@@ -323,7 +337,11 @@ export function applyDone(payload: InferenceDonePayload): boolean {
   return true;
 }
 
-export function applyError(payload: { id: string; message: string }): void {
+export function applyError(payload: {
+  id: string;
+  code?: string;
+  message: string;
+}): void {
   if (isDiscardedRun(payload.id)) {
     discardedRunIds.delete(payload.id);
     return;
@@ -334,11 +352,45 @@ export function applyError(payload: { id: string; message: string }): void {
   if (activeRunId === null && current.id !== payload.id) return;
   // Optimistic cancel already applied; ignore late cancelled/error for same job.
   if (current.status === "cancelled") return;
-  const status = payload.message === "cancelled" ? "cancelled" : "error";
+  const parsed =
+    typeof payload.code === "string" && payload.code.length > 0
+      ? { code: payload.code, message: payload.message }
+      : parseAppError(payload.message);
+  const code = parsed.code;
+  const message = parsed.message || payload.message;
+  if (code === ERROR_CODES.cancelled || message === "cancelled") {
+    imageStore.getState().patch({
+      status: "cancelled",
+      stage: null,
+      error: null,
+    });
+    return;
+  }
   imageStore.getState().patch({
-    status,
+    status: "error",
     stage: null,
-    error: status === "error" ? payload.message : null,
+    error: { code, message },
+  });
+}
+
+/** Apply GPU→CPU fallback notice for the active run (process stays non-error). */
+export function applyFallback(payload: InferenceFallbackPayload): void {
+  if (isDiscardedRun(payload.id)) {
+    discardedRunIds.delete(payload.id);
+    return;
+  }
+  if (!isCurrentRunEvent(payload.id)) return;
+  const current = imageStore.getState().current;
+  if (!current) return;
+  if (activeRunId === null && current.id !== payload.id) return;
+  if (current.status === "cancelled") return;
+
+  const copy = formatFallbackNotice(payload.from_ep, payload.to_ep);
+  uiStore.getState().showNotice({
+    severity: "warning",
+    title: copy.title,
+    body: copy.body,
+    code: "inference_fallback",
   });
 }
 
@@ -364,10 +416,17 @@ export async function initCurrentImageListeners(): Promise<() => void> {
     },
   );
 
+  const unsubscribeFallback = await listenInferenceFallback(
+    (payload: InferenceFallbackPayload) => {
+      applyFallback(payload);
+    },
+  );
+
   return () => {
     unsubscribeProgress();
     unsubscribeDone();
     unsubscribeError();
+    unsubscribeFallback();
   };
 }
 

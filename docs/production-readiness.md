@@ -79,6 +79,8 @@ Many failures only reach `console.error` — model list failures, download failu
 - Actionable copy for common cases: missing GPU drivers, disk full, network down during download, corrupt model
 - **GPU OOM fallback** — backend automatic GPU→CPU retry + `inference:fallback` event shipped; in-app user notice still pending (see §1.0)
 
+**Plan (locked 2026-07-18):** [`user-visible-errors-plan.md`](user-visible-errors-plan.md) — structured `{ code, message }` wire, FE copy map, hybrid local/shared notice UI, three PRs (contract → core UX → full inventory).
+
 ### 2.5 License disclosure in the UI
 
 **Done (0.9):** one-time NC license modal before the first Balanced+ / Max Quality download, with CC BY-NC 4.0 link and commercial-use guidance; **Non-commercial** badge on downloaded RMBG modes. Covered by Playwright E2E (`NC license modal gates first RMBG download`).
@@ -181,8 +183,8 @@ Use this as a trackable backlog; check items off as they ship.
 
 ### Reliability
 
-- [ ] User-visible errors for model list / download / process / reveal-in-folder
-- [ ] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; UI notice pending)
+- [x] User-visible errors for model list / download / process / reveal-in-folder (PR1–3 ✅ — see [`user-visible-errors-plan.md`](user-visible-errors-plan.md))
+- [x] GPU OOM detection → CPU fallback + notice (BE fallback + event ✅; sticky UI notice ✅ PR2)
 - [x] Backend download cancel (if UI cancel is kept)
 - [ ] Large-image guard or clear “may fail” messaging
 
