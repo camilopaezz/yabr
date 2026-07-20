@@ -10,14 +10,7 @@ Built with [Tauri 2](https://v2.tauri.app), React, and Rust ([ONNX Runtime](http
 
 ## Download
 
-Prebuilt installers are published on **[GitHub Releases](https://github.com/camilopaezz/SwiftMask/releases)** when a version is tagged:
-
-| Platform | Asset |
-|----------|--------|
-| **Linux x64** | `swiftmask-linux.AppImage` |
-| **Windows x64** | `swiftmask-windows-setup.exe` |
-
-> Until the first public release is tagged, you can also grab AppImage/NSIS **artifacts from CI** on recent green `main` workflow runs, or [build from source](#development).
+Prebuilt installers are published on **[GitHub Releases](https://github.com/camilopaezz/SwiftMask/releases)**. 
 
 ### Linux (AppImage)
 
@@ -51,10 +44,8 @@ On first run the app **benchmarks** available execution providers (CPU, CUDA on 
 - **Local inference** — images never leave your machine
 - **Multiple quality modes** — from a fast bundled model to larger downloadable ones
 - **GPU acceleration** — CUDA on Linux (NVIDIA), DirectML on Windows; CPU fallback everywhere
-- **First-run benchmark** — picks the fastest execution provider for your hardware
 - **Drag and drop** — open images from the file picker or drop them on the preview pane
 - **Before/after slider** — scrub between input and output after processing
-- **Transparent PNG output** — writes `{name}-nobg-{model}.png` next to the source or to a chosen folder
 
 Supported input formats: **PNG, JPG, WEBP, BMP**.
 
@@ -70,7 +61,6 @@ Supported input formats: **PNG, JPG, WEBP, BMP**.
 ![Quality mode list](docs/screenshots/02-quality-modes.png)
 
 Downloads are verified with **SHA-256** before use and cached under the app data directory (`models/`).  
-**Balanced+** and **Max Quality** show a **Non-commercial** badge and require a one-time license acknowledgment before the first download.
 
 ## How to use
 
@@ -85,31 +75,12 @@ Downloads are verified with **SHA-256** before use and cached under the app data
 
 Default output name: `{original-stem}-nobg-{modelId}.png` next to the input (or in the folder you set in Settings). If that file already exists, SwiftMask asks before overwriting.
 
-### Settings
-
-Open **Settings** (gear icon in the title bar):
-
-- **Theme** — system / light / dark  
-- **Execution provider** — CPU, CUDA (Linux NVIDIA), or DirectML (Windows); override the benchmark choice  
-- **Output directory** — optional; default is next to the input file  
-- **Re-run benchmark** — re-measure EPs on this machine  
-- Runtime meta — GPU / VRAM / available EPs and app + ORT versions (useful for bug reports)
-
-### Keyboard shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+O` / `⌘O` | Open image |
-| `Ctrl+Enter` / `⌘Enter` | Process |
-| `Escape` | Cancel running job (or close modal when one is open) |
-
 ## Troubleshooting
 
 | Problem | What to try |
 |---------|-------------|
 | **Blank / black window (Linux)** | Launch with `WEBKIT_DISABLE_COMPOSITING_MODE=1`. Some Arch/CachyOS WebKit builds need this. |
 | **AppImage won’t start** | `chmod +x` the file. Ensure FUSE is available, or extract with `./swiftmask-linux.AppImage --appimage-extract`. |
-| **Slow processing** | Prefer **Turbo** or ensure GPU EP is selected in Settings. First run of a mode may still download weights. |
 | **CUDA not used (Linux)** | Install proprietary NVIDIA drivers. The title-bar chip should read **CUDA** when active. Without drivers, CPU is used automatically. |
 | **Windows SmartScreen** | Expected for unsigned builds — *More info* → *Run anyway* if you trust the release. |
 | **Download fails** | Check network access to GitHub / Hugging Face. Incomplete files are re-downloaded and re-verified. |
@@ -143,56 +114,6 @@ bun run tauri dev
 ```
 
 This starts the Vite dev server and opens the desktop window. On first launch the app benchmarks available execution providers and may prompt you to download a preferred model.
-
-### Scripts
-
-| Command | Description |
-|---------|-------------|
-| `bun run dev` | Vite dev server only (port 1420) |
-| `bun run tauri dev` | Full desktop app in development |
-| `bun run build` | Production frontend build |
-| `bun run tauri build` | Release installer/bundle |
-| `bun run tauri:build:cachy` | Release build with `WEBKIT_DISABLE_COMPOSITING_MODE=1` and `NO_STRIP=true` (workaround for some WebKit/GTK setups) |
-| `bun run test` | Vitest unit tests |
-| `bun run test:e2e` | Playwright E2E (mocked Tauri APIs; requires `VITE_E2E=1`, set automatically by Playwright config) |
-| `bun run lint` | Biome check (lint + format) |
-| `bun run format` | Biome format write |
-| `bun run gen:models` | Regenerate `src/lib/models.generated.ts` from `src-tauri/src/models.rs` |
-| `bun run gen:models:check` | Fail if the generated registry is stale (CI) |
-
-### Rust
-
-```bash
-cd src-tauri
-cargo test --locked    # unit tests + u2netp smoke inference (IoU against fixture mask)
-```
-
-### Project layout
-
-```
-src/                  React UI (components, stores, Tauri invoke wrappers)
-src-tauri/src/        Rust backend (inference, models, GPU detect, image I/O)
-src-tauri/models/     Bundled u2netp.onnx weights
-e2e/                  Playwright tests with mocked @tauri-apps/* plugins
-docs/                 Product / readiness notes; screenshots for this README
-```
-
-The model registry is defined once in Rust (`src-tauri/src/models.rs`) and mirrored to TypeScript via `gen:models`. After changing model metadata, run `bun run gen:models` and commit both files.
-
-### E2E notes
-
-Playwright runs against the Vite dev server with `VITE_E2E=1`, which swaps Tauri APIs for mocks in `e2e/mocks/`. Do not point tests at a normal `bun run dev` session — the UI expects mock hooks and will not load correctly.
-
-```bash
-bunx playwright install --with-deps chromium
-bun run test:e2e
-```
-
-On headless Linux CI, tests run under `xvfb-run`.
-
-### IDE setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 
 ## License
 
