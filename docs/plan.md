@@ -19,7 +19,7 @@ Open source (MIT), no telemetry, no cloud. All inference runs on the user's hard
 | A4 | Model registry | **`u2netp`, `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`** | Covers Turbo / Balanced / Balanced+ / Max Quality. All have ONNX exports. BRIA allowed (non-commercial OSS). |
 | A5 | Feature scope (MVP) | **Drag-drop + preview + export PNG transparent (single image at a time)** | Focused MVP; no batch queue, no post-processing, no video, no manual editor. |
 | A6 | Frontend stack | **React + TypeScript + Vite** | Mature ecosystem, drag-drop/canvas libs, official Tauri template. |
-| A7 | Release targets (v1) | **Windows x64 + Linux x64 (AppImage)** | Author's hardware (Ryzen 5 4600G). macOS deferred (no device to test). |
+| A7 | Release targets (v1) | **Windows x64 (NSIS + MSI) + Linux x64 (AppImage + deb + rpm)** | Author's hardware (Ryzen 5 4600G). macOS deferred (no device to test). |
 | A8 | Model delivery | **On-demand lazy download from HuggingFace + cache in appData** | Small installer (~30 MB); user only downloads modes they use. |
 | A9 | GPU detection | **Auto-detect + silent benchmark + manual override** | iGPU (Vega 7) sometimes slower with DirectML than CPU — benchmark prevents bad defaults. |
 | A10 | Rust layout | **Single crate in `src-tauri/`** | Sufficient for MVP; refactor to workspace only if it grows. |
@@ -61,7 +61,7 @@ These are easy to get wrong if you only skim the code.
 
 ## 4. Release & distribution (open work)
 
-- **Targets (v1):** NSIS (Windows x64), AppImage (Linux x64). Installer ~30 MB + lazy models.
+- **Targets (v1):** NSIS + MSI (Windows x64); AppImage + deb + rpm (Linux x64). Installer ~30 MB + lazy models.
 - **Signing:** Windows builds unsigned for now (SmartScreen expected). Updater key pair planned for A16; not wired yet.
 - **CI:** Windows + Ubuntu builds; installers as artifacts (14-day retention). **Release workflow** exists (`.github/workflows/release.yml`); first public tag still pending.
 - **Linux AppImage:** core ORT is **statically linked** via `ort` `download-binaries` — the classic dynamic `libonnxruntime.so` rpath footgun does **not** apply. Ubuntu CI AppImages validated outside CI (Arch, including CUDA). Remaining work is install docs + host NVIDIA deps for CUDA, not an AppImage rpath patch. Details: [`production-readiness.md`](production-readiness.md) §2.3.

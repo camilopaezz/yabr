@@ -8,7 +8,7 @@ Version numbers must stay in sync across `package.json`, `src-tauri/Cargo.toml`,
 
 ### Added
 
-- (changes landing on `dev` but not yet released)
+- Release and CI publish extra installers: Linux `.deb` / `.rpm` and Windows `.msi` (alongside AppImage + NSIS)
 
 ## [0.9.0-beta.1] - 2026-07-20
 

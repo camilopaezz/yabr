@@ -43,7 +43,9 @@ Repeat until `dev` has enough for a release.
    git tag v0.2.0
    git push origin v0.2.0
    ```
-5. **Release workflow** (`.github/workflows/release.yml`) builds installers and publishes a [GitHub Release](https://docs.github.com/en/repositories/releasing-projects-on-github) with assets.
+5. **Release workflow** (`.github/workflows/release.yml`) builds installers and publishes a [GitHub Release](https://docs.github.com/en/repositories/releasing-projects-on-github) with assets:
+   - Linux: AppImage, `.deb`, `.rpm`
+   - Windows: NSIS setup `.exe`, `.msi`
 
 To re-run a failed publish without retagging, use **Actions → Release → Run workflow** with the existing tag.
 

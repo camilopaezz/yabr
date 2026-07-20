@@ -22,8 +22,8 @@ The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Vers
 - Rust job module (`job.rs`) with unit tests; inference smoke test (IoU ≥ 0.85)
 - Model registry codegen (`gen:models` / `gen:models:check`) — Rust SoT, no SHA drift
 - CI (`.github/workflows/ci.yml`): Biome lint, Vitest, `gen:models:check`, `cargo test`,
-  release builds on `ubuntu-24.04` (AppImage) + `windows-latest` (NSIS); artifacts retained 14 days
-- **Release workflow** (`.github/workflows/release.yml`): tag `vX.Y.Z` → version sync → NSIS + AppImage → GitHub Release + CHANGELOG body
+  release builds on `ubuntu-24.04` (AppImage + deb + rpm) + `windows-latest` (NSIS + MSI); artifacts retained 14 days
+- **Release workflow** (`.github/workflows/release.yml`): tag `vX.Y.Z` → version sync → AppImage/deb/rpm + NSIS/MSI → GitHub Release + CHANGELOG body
 - **Mocked** Playwright E2E on every push/PR to `main` (UI wiring smoke only — see §2.2)
 - NC license modal gates first Balanced+ / Max Quality download; persistent ack in `localStorage`; **Non-commercial** badge on ready RMBG modes
 - Backend download cancel (single-flight slot)
@@ -176,7 +176,7 @@ Use this as a trackable backlog; check items off as they ship.
 
 ### Distribution
 
-- [x] GitHub Releases workflow (tag → NSIS + AppImage upload)
+- [x] GitHub Releases workflow (tag → AppImage/deb/rpm + NSIS/MSI upload)
 - [x] `CHANGELOG` / release notes per version
 - [ ] First public tag / GitHub Release published
 - [ ] `tauri-plugin-updater` + signing key in CI secrets

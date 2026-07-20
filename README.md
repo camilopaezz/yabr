@@ -10,7 +10,7 @@ Built with [Tauri 2](https://v2.tauri.app), React, and Rust ([ONNX Runtime](http
 
 ## Download
 
-Prebuilt installers are published on **[GitHub Releases](https://github.com/camilopaezz/SwiftMask/releases)**. 
+Prebuilt installers are published on **[GitHub Releases](https://github.com/camilopaezz/SwiftMask/releases)**.
 
 ### Linux (AppImage)
 
@@ -19,7 +19,7 @@ chmod +x swiftmask-linux.AppImage
 ./swiftmask-linux.AppImage
 ```
 
-- No install step required. Models download into your app data directory on first use.
+- No install step required.
 - **NVIDIA GPU (optional):** install proprietary drivers as usual. SwiftMask selects CUDA when the stack is available; otherwise it uses CPU.
 - If the window is blank or glitchy on some WebKit/GTK setups, try:
 
@@ -27,11 +27,28 @@ chmod +x swiftmask-linux.AppImage
   WEBKIT_DISABLE_COMPOSITING_MODE=1 ./swiftmask-linux.AppImage
   ```
 
-- If your desktop cannot run AppImages (missing FUSE), extract and run the inner binary (e.g. `--appimage-extract`) or use a distro package when available.
+- If your desktop cannot run AppImages (missing FUSE), use the `.deb` / `.rpm`, or extract with `./swiftmask-linux.AppImage --appimage-extract`.
 
-### Windows (NSIS)
+### Linux (.deb)
 
-1. Download `swiftmask-windows-setup.exe` from the release.
+```bash
+sudo dpkg -i swiftmask-linux.deb
+# if dependencies are missing:
+sudo apt-get install -f
+```
+
+### Linux (.rpm)
+
+```bash
+# Fedora / RHEL-family
+sudo dnf install ./swiftmask-linux.rpm
+# or
+sudo rpm -i swiftmask-linux.rpm
+```
+
+### Windows (NSIS or MSI)
+
+1. Download `swiftmask-windows-setup.exe` (NSIS) or `swiftmask-windows.msi` (MSI) from the release.
 2. Run the installer.
 3. **SmartScreen** may warn on unsigned builds — choose *More info* → *Run anyway* if you trust the release source. Signing is planned for later releases.
 
@@ -80,7 +97,7 @@ Default output name: `{original-stem}-nobg-{modelId}.png` next to the input (or 
 | Problem | What to try |
 |---------|-------------|
 | **Blank / black window (Linux)** | Launch with `WEBKIT_DISABLE_COMPOSITING_MODE=1`. Some Arch/CachyOS WebKit builds need this. |
-| **AppImage won’t start** | `chmod +x` the file. Ensure FUSE is available, or extract with `./swiftmask-linux.AppImage --appimage-extract`. |
+| **AppImage won’t start** | `chmod +x` the file. Ensure FUSE is available, extract with `./swiftmask-linux.AppImage --appimage-extract`, or install the `.deb` / `.rpm` instead. |
 | **CUDA not used (Linux)** | Install proprietary NVIDIA drivers. The title-bar chip should read **CUDA** when active. Without drivers, CPU is used automatically. |
 | **Windows SmartScreen** | Expected for unsigned builds — *More info* → *Run anyway* if you trust the release. |
 | **Download fails** | Check network access to GitHub / Hugging Face. Incomplete files are re-downloaded and re-verified. |
