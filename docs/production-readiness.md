@@ -1,6 +1,6 @@
 # SwiftMask — production readiness
 
-Assessment of what remains before SwiftMask is safe to ship to non-developers. Written 2026-07-12.
+Assessment of what remains before SwiftMask is safe to ship to non-developers. Written 2026-07-12; last reviewed **2026-07-20**.
 
 > Status: **Living document.** Update as items ship or priorities change.
 
@@ -10,7 +10,7 @@ Assessment of what remains before SwiftMask is safe to ship to non-developers. W
 
 SwiftMask is past “does it work?” and into “can strangers install it, trust it, and not get stuck?” The core loop is solid: local inference, model downloads, GPU benchmark, drag-and-drop, compare slider, overwrite handling, and CI that builds real installers.
 
-The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Version is still **0.1.0** — a working alpha, not a shippable 1.0.
+The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Version is still **0.1.0** — a working alpha, not a shippable 1.0. No version tags / GitHub Releases published yet (workflow is ready; strangers still build from source or grab CI artifacts).
 
 **Already in place:**
 
@@ -23,9 +23,14 @@ The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Vers
 - Model registry codegen (`gen:models` / `gen:models:check`) — Rust SoT, no SHA drift
 - CI (`.github/workflows/ci.yml`): Biome lint, Vitest, `gen:models:check`, `cargo test`,
   release builds on `ubuntu-24.04` (AppImage) + `windows-latest` (NSIS); artifacts retained 14 days
+- **Release workflow** (`.github/workflows/release.yml`): tag `vX.Y.Z` → version sync → NSIS + AppImage → GitHub Release + CHANGELOG body
 - **Mocked** Playwright E2E on every push/PR to `main` (UI wiring smoke only — see §2.2)
 - NC license modal gates first Balanced+ / Max Quality download; persistent ack in `localStorage`; **Non-commercial** badge on ready RMBG modes
-- README with dev setup, scripts, and commercial-use guidance for model licenses
+- Backend download cancel (single-flight slot)
+- GPU OOM → automatic CPU retry + `inference:fallback` event (UI notice still pending)
+- Keyboard shortcuts for open / process / cancel
+- README with **user install / download / troubleshooting**, screenshots, and commercial-use guidance for model licenses (plus dev section)
+- **Linux AppImage validated outside CI** (Ubuntu-built CI artifacts on Arch, including CUDA) — see §2.3
 
 ---
 
@@ -33,19 +38,17 @@ The MVP scope from [`plan.md`](plan.md) (Phases 0–7) is largely complete. Vers
 
 ### 2.1 Ship artifacts (highest impact)
 
-CI builds installers but there is no **release workflow** — nothing publishes to GitHub Releases with notes and downloadable assets. Users cannot get the app without building it themselves.
+CI builds installers and **`.github/workflows/release.yml` is wired**, but there is still **no published tag / GitHub Release**. Users cannot get a stable download without building from source or hunting CI artifacts.
 
-Also missing (planned in [`plan.md`](plan.md) Phase 9, not yet in the repo):
+| Item | Status |
+|------|--------|
+| GitHub Releases workflow | ✅ `.github/workflows/release.yml` |
+| `CHANGELOG` | ✅ Keep-a-Changelog skeleton (fix repo links if needed) |
+| User-facing install docs | ✅ README: download table, AppImage/NSIS steps, screenshots, troubleshooting (CUDA, WebKit/GTK, SmartScreen) |
+| `tauri-plugin-updater` | ❌ Planned in decision A16; not wired in `Cargo.toml` / `tauri.conf.json` |
+| Signing keys | ❌ Updater requires a key pair; private key in CI secrets |
 
-| Item | Notes |
-|------|-------|
-| GitHub Releases workflow | Upload NSIS + AppImage with tagged version |
-| `tauri-plugin-updater` | Planned in decision A16; not wired in `Cargo.toml` / `tauri.conf.json` |
-| Signing keys | Updater requires a key pair; private key in CI secrets |
-| `CHANGELOG` | No release notes file yet |
-| User-facing install docs | Screenshots, “download here”, troubleshooting (CUDA, WebKit/GTK) |
-
-Until installers are published, “production ready” is mostly theoretical.
+Until a version is **tagged and published**, “production ready” is still theoretical for non-developers.
 
 ### 2.2 E2E coverage (mocked vs real)
 
@@ -63,11 +66,28 @@ CI runs two different kinds of “end-to-end” verification. Only one is in pla
 
 Do **not** treat mocked E2E on PR as production-ready coverage. It is a **0.9 CI hygiene** item, not proof the shipped app works.
 
-### 2.3 Linux packaging hardening
+### 2.3 Linux packaging (AppImage)
 
-[`plan.md`](plan.md) calls for an AppImage **rpath fix** (`src-tauri/.cargo/config.toml` with `link-arg=-Wl,-rpath,$ORIGIN`) so `libonnxruntime.so` resolves at runtime. That file is not in the repo yet.
+**Status: base path validated — not a beta blocker.**
 
-CI may produce an AppImage that works in CI and fails on a clean machine. Verify on a fresh Ubuntu install before calling Linux done.
+Older notes called for an AppImage **rpath fix** (`src-tauri/.cargo/config.toml` with `link-arg=-Wl,-rpath,$ORIGIN`) so a separate `libonnxruntime.so` would resolve at runtime (classic dynamic-ORT / tauri packaging footgun).
+
+**That layout does not match the current build:**
+
+- Linux uses `ort` with `download-binaries` → core ONNX Runtime is **statically linked** into `swiftmask` (`cargo:rustc-link-lib=static=onnxruntime`).
+- The AppImage binary does **not** `NEEDED` `libonnxruntime.so`; `OrtGetApiBase` is defined in the binary.
+- AppImage `RUNPATH=$ORIGIN/../lib` is for the **GTK/WebKit** stack linuxdeploy bundles, not for ORT.
+- A separate `.cargo/config.toml` rpath for `libonnxruntime.so` is **not required** for the current linkage and should not be treated as open ship work.
+
+**Manual validation (2026-07):** Ubuntu 24.04 **CI AppImage** artifacts run on **Arch**, including **CUDA** EP. That is stronger evidence than “works in the builder environment” and closes the “strangers can’t load the Linux binary” fear for the intended path.
+
+**Remaining Linux notes (docs / edge cases, not emergency packaging):**
+
+| Topic | Notes |
+|-------|--------|
+| CUDA host deps | CUDA EP still needs a normal NVIDIA userland on the host (drivers + CUDA libs). AppImage is not a full CUDA redistributable. Missing stack → CPU fallback (by design). |
+| Install docs | `chmod +x`, FUSE / AppImage run issues, WebKit compositing (`WEBKIT_DISABLE_COMPOSITING_MODE` / `tauri:build:cachy`) |
+| Optional automation | Formal clean-profile or post-build smoke in CI is still nice for 1.0; manual cross-distro runs already green |
 
 ### 2.4 User-visible error handling
 
@@ -78,6 +98,8 @@ Many failures only reach `console.error` — model list failures, download failu
 - Clear inline errors (not only `Error: …` in the rail footer)
 - Actionable copy for common cases: missing GPU drivers, disk full, network down during download, corrupt model
 - **GPU OOM fallback** — backend automatic GPU→CPU retry + `inference:fallback` event shipped; in-app user notice still pending (see §1.0)
+
+> Note: structured user-visible errors (+ OOM notice) may already be implemented on a feature branch; until merged to `dev`, this remains open on the integration line.
 
 ### 2.5 License disclosure in the UI
 
@@ -92,7 +114,6 @@ Not all blockers for 1.0, but expect support tickets without them:
 | Gap | User impact |
 |-----|-------------|
 | No large-image handling (>4K) | OOM or very slow runs (tiling is post-MVP in plan) |
-| Download cancel may be UI-only | Cancel button might not abort the backend transfer |
 | `ort` is **2.0.0-rc.12** | Release-candidate dependency for a “stable” label |
 | Windows unsigned | SmartScreen warnings — expected; document in install guide |
 | No macOS | Intentionally deferred (no CoreML target yet) |
@@ -107,45 +128,47 @@ Zero telemetry matches the product promise; **local logs** give support without 
 ### 2.8 UX polish (lower priority)
 
 - First-run is silent beyond the benchmark spinner — a short “drop an image → Process” hint helps
-- Keyboard shortcuts (open file, process, cancel)
+- ~~Keyboard shortcuts (open file, process, cancel)~~ ✅
 - About section with license links and model attributions
 
 ---
 
 ## 3. Suggested release tiers
 
-### Public beta (0.9) — ~1–2 weeks focused work
+### Public beta (0.9) — remaining focused work
 
-1. GitHub Releases workflow
+1. ~~GitHub Releases workflow~~ ✅ (publish first real tag still pending)
 2. ~~Mocked UI E2E on every PR~~ ✅ (does **not** substitute for real desktop E2E)
-3. AppImage smoke test on clean Linux
-4. In-app error surfacing ~~+ NC license notice for RMBG modes~~ (NC notice ✅)
-5. Screenshots + install troubleshooting in README
+3. ~~AppImage base path outside CI~~ ✅ (Arch + CUDA on Ubuntu CI artifacts; rpath item obsolete — see §2.3)
+4. In-app error surfacing ~~+ NC license notice for RMBG modes~~ (NC notice ✅; errors still open on `dev`)
+5. ~~Screenshots + install troubleshooting in README~~ ✅
+6. **Tag and publish** first public beta so strangers can download
 
 ### 1.0
 
 1. Signed auto-updater (`tauri-plugin-updater`)
-2. GPU OOM → CPU fallback with user notice
+2. GPU OOM → CPU fallback with user notice (BE ✅; UI notice pending)
 3. **Real desktop E2E** — at least one happy path: drop fixture → process → output PNG exists on disk
 4. Local diagnostic log + “report issue” link
+5. About / licenses panel
 
 ### Post-1.0
 
-Already in [`plan.md`](plan.md) §12: macOS/CoreML, batch queue, mask tuning, large-image tiling, video, manual editor.
+Already in [`plan.md`](plan.md): macOS/CoreML, batch queue, mask tuning, large-image tiling, video, manual editor.
 
 ---
 
 ## 4. Bottom line
 
-The **product** is close. The **release infrastructure and failure modes** separate “works on my machine” from production.
+The **product** is close. What still separates “works for us” from production for non-developers is mainly **publishing + failure UX + support docs**, not Linux packaging theory.
 
 **Three highest-leverage next steps:**
 
-1. **Publish installers** (GitHub Releases)
-2. **Make errors visible to users**
-3. **Verify Linux artifacts** on a clean machine (AppImage rpath + smoke install)
+1. **Publish installers** (tag a version; release workflow already exists)
+2. **Make errors visible to users** (and GPU OOM notice)
+3. ~~Install / troubleshooting docs~~ ✅ (README)
 
-Mocked E2E on PR is done and helps, but it does not belong in this list — it guards UI wiring, not shippability. Real desktop E2E is a **1.0** item.
+Linux AppImage loadability is **no longer** in that list — static ORT + manual CI-artifact validation (including CUDA on Arch) closed the old rpath fear. Mocked E2E guards UI wiring only; real desktop E2E remains a **1.0** item.
 
 ---
 
@@ -157,9 +180,11 @@ Use this as a trackable backlog; check items off as they ship.
 
 - [x] GitHub Releases workflow (tag → NSIS + AppImage upload)
 - [x] `CHANGELOG` / release notes per version
+- [ ] First public tag / GitHub Release published
 - [ ] `tauri-plugin-updater` + signing key in CI secrets
-- [ ] User README: download links, screenshots, install troubleshooting
-- [ ] AppImage rpath fix (`.cargo/config.toml`)
+- [x] User README: download links, screenshots, install troubleshooting
+- [x] Linux AppImage base path (static ORT; validated outside CI incl. CUDA) — see §2.3
+- ~~[ ] AppImage rpath fix (`.cargo/config.toml`)~~ — **obsolete** with static `ort` linkage; do not re-open unless packaging switches back to dynamic `libonnxruntime.so`
 
 ### CI / testing
 
@@ -195,10 +220,10 @@ Use this as a trackable backlog; check items off as they ship.
 
 - [ ] Local log file (rotating, no network)
 - [ ] “Copy diagnostics” in Settings
-- [ ] Link to issue tracker / feedback
+- [x] Link to issue tracker / feedback (README)
 
 ### Polish
 
 - [ ] First-run hint or empty-state copy beyond benchmark
-- [ ] Keyboard shortcuts
-- [ ] Windows SmartScreen note in docs
+- [x] Keyboard shortcuts
+- [x] Windows SmartScreen note in docs
