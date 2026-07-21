@@ -35,6 +35,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,6 +46,17 @@
     "windows": {
       "wix": {
         "version": "0.9.0.1"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCRDBEMzUxMjEwRUQwMApSV1FBN1JBU05RMjlCc3JXd2FwT2VZWkdYRG81K09tRmk4RzBHL0RWOGVxUUZQRU80Sm1tS1c3SAo=",
+      "endpoints": [
+        "https://github.com/camilopaezz/SwiftMask/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
