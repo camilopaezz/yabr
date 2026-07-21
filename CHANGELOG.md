@@ -10,6 +10,10 @@ Version numbers must stay in sync across `package.json`, `src-tauri/Cargo.toml`,
 
 - Release and CI publish extra installers: Linux `.deb` / `.rpm` and Windows `.msi` (alongside AppImage + NSIS)
 
+### Fixed
+
+- Windows MSI bundling with SemVer pre-release versions (e.g. `0.9.0-beta.1`) by setting a numeric `bundle.windows.wix.version`
+
 ## [0.9.0-beta.1] - 2026-07-20
 
 ### Added

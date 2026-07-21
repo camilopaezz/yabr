@@ -34,6 +34,7 @@ Repeat until `dev` has enough for a release.
 
 1. On `dev`, prepare a release PR into `main`:
    - Bump version in **all three** files: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`
+   - MSI/WiX only accepts a numeric ProductVersion (`major.minor.patch[.build]`). SemVer pre-releases like `0.9.0-beta.1` fail unless `bundle.windows.wix.version` is set to something numeric (e.g. `0.9.0.1`). For stable releases you can drop the override.
    - Move `[Unreleased]` items in `CHANGELOG.md` under a new `## [X.Y.Z] - YYYY-MM-DD` section
 2. Open **PR `dev` → `main`**. **Full CI runs** (lint, unit tests, `gen:models:check`, Rust tests, Tauri bundles on Linux + Windows, mocked Playwright E2E).
 3. Merge when green and reviewed. Merging does not re-run CI — the PR run is the gate.
