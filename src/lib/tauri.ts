@@ -76,9 +76,7 @@ export type BenchmarkResult = {
 
 export type Config = {
   execution_provider: string | null;
-  model_id: string | null;
   output_dir: string | null;
-  platform: string | null;
 };
 
 export type ModelDownloadPayload = {
@@ -126,10 +124,6 @@ export function invokeGetConfig(): Promise<Config> {
 
 export function invokeGetRuntimeInfo(): Promise<RuntimeInfo> {
   return tauriInvoke("get_runtime_info");
-}
-
-export function invokeSetConfig(config: Config): Promise<void> {
-  return tauriInvoke("set_config", { config });
 }
 
 export function invokeRemoveImageBackground(

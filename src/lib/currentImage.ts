@@ -88,16 +88,40 @@ function isImageFile(path: string): boolean {
   return IMAGE_EXTENSIONS.has(getExtension(path));
 }
 
-function isDiscardedRun(runId: string): boolean {
-  return discardedRunIds.has(runId);
-}
+/**
+ * Resolve whether a backend event should mutate image state.
+ *
+ * - Prefer `activeRunId` when set (prod Process path).
+ * - Fall back to matching `current.id` for tests that skip startProcess.
+ * - Terminal events (done/error/fallback) remove discarded run ids so the set
+ *   does not grow; progress leaves them (cancel may still hold the slot).
+ * - Progress only applies while status is `processing` (no late resurrection).
+ * - Done/error/fallback ignore already-cancelled UI (optimistic cancel).
+ */
+function resolveRunEvent(
+  runId: string,
+  opts: { terminal: boolean; requireProcessing: boolean },
+): ImageItem | null {
+  if (discardedRunIds.has(runId)) {
+    if (opts.terminal) discardedRunIds.delete(runId);
+    return null;
+  }
+  const current = imageStore.getState().current;
+  if (!current) return null;
 
-/** Whether this event belongs to the run we still care about. */
-function isCurrentRunEvent(runId: string): boolean {
-  if (isDiscardedRun(runId)) return false;
-  if (activeRunId !== null) return runId === activeRunId;
-  // Tests that never call startProcess still key events on the image id.
-  return true;
+  if (activeRunId !== null) {
+    if (runId !== activeRunId) return null;
+  } else if (current.id !== runId) {
+    return null;
+  }
+
+  if (opts.requireProcessing) {
+    if (current.status !== "processing") return null;
+  } else if (current.status === "cancelled") {
+    return null;
+  }
+
+  return current;
 }
 
 /** Domain busy: backend processing, cancel wait, or overwrite/start handoff. */
@@ -299,17 +323,14 @@ export function applyProgress(payload: {
   stage: string;
   pct: number;
 }): void {
-  if (isDiscardedRun(payload.id)) return;
-  const current = imageStore.getState().current;
-  if (!current) return;
-  // Prefer active run id; fall back to image id for tests that skip startProcess.
-  if (activeRunId !== null) {
-    if (payload.id !== activeRunId) return;
-  } else if (current.id !== payload.id) {
+  if (
+    !resolveRunEvent(payload.id, {
+      terminal: false,
+      requireProcessing: true,
+    })
+  ) {
     return;
   }
-  // Do not resurrect done/error/ready via late progress events.
-  if (current.status !== "processing") return;
   imageStore.getState().patch({
     status: "processing",
     progress: payload.pct,
@@ -319,15 +340,14 @@ export function applyProgress(payload: {
 
 /** @returns true if the done event was applied to image state. */
 export function applyDone(payload: InferenceDonePayload): boolean {
-  if (isDiscardedRun(payload.id)) {
-    discardedRunIds.delete(payload.id);
+  if (
+    !resolveRunEvent(payload.id, {
+      terminal: true,
+      requireProcessing: false,
+    })
+  ) {
     return false;
   }
-  if (!isCurrentRunEvent(payload.id)) return false;
-  const current = imageStore.getState().current;
-  if (!current) return false;
-  if (activeRunId === null && current.id !== payload.id) return false;
-  if (current.status === "cancelled") return false;
   imageStore.getState().patch({
     status: "done",
     progress: 100,
@@ -342,16 +362,14 @@ export function applyError(payload: {
   code?: string;
   message: string;
 }): void {
-  if (isDiscardedRun(payload.id)) {
-    discardedRunIds.delete(payload.id);
+  if (
+    !resolveRunEvent(payload.id, {
+      terminal: true,
+      requireProcessing: false,
+    })
+  ) {
     return;
   }
-  if (!isCurrentRunEvent(payload.id)) return;
-  const current = imageStore.getState().current;
-  if (!current) return;
-  if (activeRunId === null && current.id !== payload.id) return;
-  // Optimistic cancel already applied; ignore late cancelled/error for same job.
-  if (current.status === "cancelled") return;
   const parsed =
     typeof payload.code === "string" && payload.code.length > 0
       ? { code: payload.code, message: payload.message }
@@ -375,15 +393,14 @@ export function applyError(payload: {
 
 /** Apply GPU→CPU fallback notice for the active run (process stays non-error). */
 export function applyFallback(payload: InferenceFallbackPayload): void {
-  if (isDiscardedRun(payload.id)) {
-    discardedRunIds.delete(payload.id);
+  if (
+    !resolveRunEvent(payload.id, {
+      terminal: true,
+      requireProcessing: false,
+    })
+  ) {
     return;
   }
-  if (!isCurrentRunEvent(payload.id)) return;
-  const current = imageStore.getState().current;
-  if (!current) return;
-  if (activeRunId === null && current.id !== payload.id) return;
-  if (current.status === "cancelled") return;
 
   const copy = formatFallbackNotice(payload.from_ep, payload.to_ep);
   uiStore.getState().showNotice({
@@ -429,9 +446,6 @@ export async function initCurrentImageListeners(): Promise<() => void> {
     unsubscribeFallback();
   };
 }
-
-/** Alias for App bootstrap; prefer initCurrentImageListeners. */
-export const initEventListeners = initCurrentImageListeners;
 
 export function prodStartProcessDeps(): StartProcessDeps {
   return {

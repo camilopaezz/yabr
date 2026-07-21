@@ -1,286 +1,25 @@
-import { useEffect, useRef, useState } from "react";
-import { isDownloadCancelled } from "../lib/downloadCancel";
-import {
-  formatDownloadCancelUnconfirmedNotice,
-  formatError,
-  formatModelsUnavailableNotice,
-} from "../lib/errorCopy";
-import {
-  FALLBACK_DEFAULT_MODE,
-  isModelReady,
-  type ModelMeta,
-  type ModelMode,
-  resolveMode,
-} from "../lib/models";
-import {
-  NC_LICENSE_MODAL_COPY,
-  needsNcLicenseAck,
-  setNcLicenseAck,
-  shouldShowNcBadge,
-} from "../lib/ncLicense";
-import { parseAppError } from "../lib/parseAppError";
-import { showAppErrorNotice, showAppNotice } from "../lib/showAppErrorNotice";
-import {
-  invokeCancelDownload,
-  invokeDownloadModel,
-  invokeListModels,
-  listenModelDownload,
-} from "../lib/tauri";
-import { useAnimatedPresence } from "../lib/useAnimatedPresence";
-import { settingsStore, useSettingsStore } from "../stores/settingsStore";
-import { uiStore } from "../stores/uiStore";
-
-type DownloadErrorState = {
-  model: ModelMeta;
-  code: string;
-  message: string;
-};
+import { formatError } from "../lib/errorCopy";
+import { isModelReady, type ModelMeta, type ModelMode } from "../lib/models";
+import { shouldShowNcBadge } from "../lib/ncLicense";
+import { useModelDownload } from "../lib/useModelDownload";
+import { useSettingsStore } from "../stores/settingsStore";
+import { DownloadModal } from "./DownloadModal";
+import { NcLicenseModal } from "./NcLicenseModal";
 
 export function ModeSelector() {
   const mode = useSettingsStore((state) => state.mode);
   const setMode = useSettingsStore((state) => state.setMode);
-  const [models, setModels] = useState<ModelMeta[]>([]);
-  const [downloading, setDownloading] = useState<ModelMeta | null>(null);
-  const [displayModel, setDisplayModel] = useState<ModelMeta | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadStage, setDownloadStage] = useState<"download" | "verify">(
-    "download",
-  );
-  const [cancelling, setCancelling] = useState(false);
-  const cancellingRef = useRef(false);
-  const [ncAckModel, setNcAckModel] = useState<ModelMeta | null>(null);
-  const [downloadError, setDownloadError] = useState<DownloadErrorState | null>(
-    null,
-  );
-  /** Bumped only when a new download starts; invalidates stale in-flight work. */
-  const downloadSessionRef = useRef(0);
-  const downloadPresence = useAnimatedPresence(Boolean(downloading));
-  const ncAckPresence = useAnimatedPresence(Boolean(ncAckModel));
-
-  useEffect(() => {
-    uiStore
-      .getState()
-      .setModalBlocksShortcuts(
-        ncAckPresence.rendered || downloadPresence.rendered,
-      );
-    return () => uiStore.getState().setModalBlocksShortcuts(false);
-  }, [ncAckPresence.rendered, downloadPresence.rendered]);
-
-  useEffect(() => {
-    if (downloading) {
-      setDisplayModel(downloading);
-    }
-  }, [downloading]);
-
-  useEffect(() => {
-    if (!downloadPresence.rendered) {
-      setDisplayModel(null);
-      // Reset progress only after exit animation so the modal does not flash
-      // back to an empty "Downloading 0%" state on completion.
-      setDownloadProgress(0);
-      setDownloadStage("download");
-    }
-  }, [downloadPresence.rendered]);
-
-  const applyModels = (list: ModelMeta[]) => {
-    setModels(list);
-    const current = settingsStore.getState().mode;
-    const next = resolveMode(current, list);
-    if (next !== current) {
-      setMode(next);
-    }
-  };
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only reconcile
-  useEffect(() => {
-    invokeListModels()
-      .then(applyModels)
-      .catch((err: unknown) => {
-        console.error("failed to list models", err);
-        // Catalog unavailable: force bundled Turbo so Process cannot target a
-        // preferred-but-unverified model.
-        setMode(FALLBACK_DEFAULT_MODE);
-        showAppErrorNotice(err, {
-          severity: "warning",
-          copy: formatModelsUnavailableNotice(),
-          code: "list_models",
-        });
-      });
-  }, []);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: download session keyed by model
-  useEffect(() => {
-    if (!downloading) return;
-
-    let unsubscribe: (() => void) | undefined;
-    let cleanedUp = false;
-    const modelId = downloading.id;
-    const modelMode = downloading.id as ModelMode;
-    const session = downloadSessionRef.current;
-    const isCurrentSession = () => downloadSessionRef.current === session;
-
-    // Subscribe first, then start the transfer. Starting both in parallel can
-    // miss early progress/verify events (worse on slower Windows WebView2 IPC).
-    void (async () => {
-      try {
-        const unsub = await listenModelDownload((payload) => {
-          if (payload.model_id !== modelId) return;
-          if (!isCurrentSession()) return;
-          if (cancellingRef.current) return;
-          setDownloadProgress(Math.max(0, Math.min(100, payload.pct)));
-          setDownloadStage(payload.stage === "verify" ? "verify" : "download");
-        });
-        if (cleanedUp || !isCurrentSession()) {
-          unsub();
-          return;
-        }
-        unsubscribe = unsub;
-
-        await invokeDownloadModel(modelId);
-        if (!isCurrentSession()) return;
-
-        // Close the modal as soon as the backend finishes — do not wait on
-        // list_models (that left "Verifying" up while the badge already updated).
-        setDownloading(null);
-
-        setMode(modelMode);
-        // Optimistic ready flag so the Download chip flips even if list is slow.
-        setModels((prev) =>
-          prev.map((m) => (m.id === modelId ? { ...m, downloaded: true } : m)),
-        );
-        try {
-          const list = await invokeListModels();
-          // Session still current means user did not cancel/re-start mid-refresh.
-          if (isCurrentSession()) {
-            applyModels(list);
-          }
-        } catch (err: unknown) {
-          console.error("failed to refresh models", err);
-          // Download already finished; model is optimistically ready — soft notice.
-          showAppErrorNotice(err, {
-            severity: "warning",
-            copy: formatModelsUnavailableNotice(),
-            code: "list_models_refresh",
-          });
-        }
-      } catch (err: unknown) {
-        if (isDownloadCancelled(err)) {
-          if (isCurrentSession() && !cancellingRef.current) {
-            setDownloading(null);
-          }
-          return;
-        }
-        console.error("download failed", err);
-        if (isCurrentSession() && !cancellingRef.current) {
-          const parsed = parseAppError(err);
-          setDownloadError({
-            model: downloading,
-            code: parsed.code,
-            message: parsed.message,
-          });
-          setDownloading(null);
-        }
-      }
-    })();
-
-    return () => {
-      cleanedUp = true;
-      unsubscribe?.();
-    };
-  }, [downloading, setMode]);
-
-  const beginDownload = (model: ModelMeta) => {
-    downloadSessionRef.current += 1;
-    cancellingRef.current = false;
-    setCancelling(false);
-    setDownloadProgress(0);
-    setDownloadStage("download");
-    setDownloadError(null);
-    setDownloading(model);
-  };
-
-  const startDownload = (model: ModelMeta) => {
-    if (downloading || isModelReady(model)) return;
-    if (needsNcLicenseAck(model)) {
-      setNcAckModel(model);
-      return;
-    }
-    beginDownload(model);
-  };
-
-  const handleNcAckAccept = () => {
-    if (!ncAckModel) return;
-    setNcLicenseAck();
-    const model = ncAckModel;
-    setNcAckModel(null);
-    beginDownload(model);
-  };
-
-  const handleNcAckCancel = () => {
-    setNcAckModel(null);
-  };
+  // Catalog is loaded once in App bootstrap and refreshed after download/cancel.
+  const models = useSettingsStore((state) => state.models);
+  const download = useModelDownload();
 
   const handleSelect = (model: ModelMeta) => {
-    if (downloading) return;
+    if (download.isBusy) return;
     if (isModelReady(model)) {
       setMode(model.id as ModelMode);
       return;
     }
-    startDownload(model);
-  };
-
-  const handleDownloadRetry = () => {
-    if (!downloadError || downloading) return;
-    beginDownload(downloadError.model);
-  };
-
-  const handleDownloadErrorDismiss = () => {
-    setDownloadError(null);
-  };
-
-  const handleCancel = () => {
-    if (cancellingRef.current) return;
-    cancellingRef.current = true;
-    setCancelling(true);
-    // Capture session so a newer beginDownload does not get cleared / reconciled
-    // by this cancel's finally (list_models can outlive a re-start).
-    const session = downloadSessionRef.current;
-    void (async () => {
-      let cancelFailed = false;
-      try {
-        await invokeCancelDownload();
-      } catch (err: unknown) {
-        cancelFailed = true;
-        console.error("failed to cancel download", err);
-      } finally {
-        if (downloadSessionRef.current === session) {
-          cancellingRef.current = false;
-          setCancelling(false);
-          setDownloading(null);
-          if (cancelFailed) {
-            // UI already cleared; warn that the transfer may still complete.
-            showAppNotice(
-              formatDownloadCancelUnconfirmedNotice(),
-              "warning",
-              "download_cancel_unconfirmed",
-            );
-          }
-          try {
-            const list = await invokeListModels();
-            if (downloadSessionRef.current === session) {
-              applyModels(list);
-            }
-          } catch (listErr: unknown) {
-            console.error("failed to refresh models", listErr);
-            showAppErrorNotice(listErr, {
-              severity: "warning",
-              copy: formatModelsUnavailableNotice(),
-              code: "list_models_refresh",
-            });
-          }
-        }
-      }
-    })();
+    download.startDownload(model);
   };
 
   return (
@@ -317,11 +56,11 @@ export function ModeSelector() {
               <button
                 type="button"
                 className="mode-option-badge mode-option-download"
-                disabled={Boolean(downloading)}
+                disabled={download.isBusy}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  startDownload(model);
+                  download.startDownload(model);
                 }}
               >
                 Download
@@ -331,101 +70,42 @@ export function ModeSelector() {
         );
       })}
 
-      {ncAckPresence.rendered && ncAckModel && (
-        <div
-          className={`nc-license-modal-backdrop${ncAckPresence.open ? " is-open" : ""}`}
-        >
-          <div
-            className={`nc-license-modal-card${ncAckPresence.open ? " is-open" : ""}`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="nc-license-modal-title"
-          >
-            <h3 id="nc-license-modal-title">{NC_LICENSE_MODAL_COPY.title}</h3>
-            <p className="nc-license-modal-summary">
-              {NC_LICENSE_MODAL_COPY.summary}
-            </p>
-            <p className="nc-license-modal-hint">
-              {NC_LICENSE_MODAL_COPY.commercialHint}
-            </p>
-            <p className="nc-license-modal-license">
-              <a
-                href={NC_LICENSE_MODAL_COPY.licenseUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {NC_LICENSE_MODAL_COPY.licenseLabel}
-              </a>
-            </p>
-            <div className="nc-license-modal-actions">
-              <button type="button" onClick={handleNcAckCancel}>
-                {NC_LICENSE_MODAL_COPY.cancelLabel}
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleNcAckAccept}
-              >
-                {NC_LICENSE_MODAL_COPY.acceptLabel}
-              </button>
-            </div>
-          </div>
-        </div>
+      {download.ncAckPresence.rendered && download.ncAckModel && (
+        <NcLicenseModal
+          open={download.ncAckPresence.open}
+          onAccept={download.handleNcAckAccept}
+          onCancel={download.handleNcAckCancel}
+        />
       )}
 
-      {downloadPresence.rendered && displayModel && (
-        <div
-          className={`download-modal-backdrop${downloadPresence.open ? " is-open" : ""}`}
-        >
-          <div
-            className={`download-modal-card${downloadPresence.open ? " is-open" : ""}`}
-          >
-            <h3>
-              {cancelling
-                ? `Cancelling ${displayModel.name}…`
-                : downloadStage === "verify"
-                  ? `Verifying ${displayModel.name}`
-                  : `Downloading ${displayModel.name}`}
-            </h3>
-            <div className="progress-bar-track">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${downloadProgress}%` }}
-              />
-            </div>
-            <div className="download-modal-pct">
-              {cancelling
-                ? "Cancelling…"
-                : downloadStage === "verify"
-                  ? "Verifying…"
-                  : `${Math.round(downloadProgress)}%`}
-            </div>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={cancelling}
-              aria-disabled={cancelling}
-            >
-              {cancelling ? "Cancelling…" : "Cancel"}
-            </button>
-          </div>
-        </div>
+      {download.downloadPresence.rendered && download.displayModel && (
+        <DownloadModal
+          open={download.downloadPresence.open}
+          modelName={download.displayModel.name}
+          progress={download.downloadProgress}
+          stage={download.downloadStage}
+          cancelling={download.cancelling}
+          onCancel={download.handleCancel}
+        />
       )}
 
-      {downloadError && !downloading && (
+      {download.downloadError && !download.downloading && (
         <div
           className="mode-download-error"
           role="alert"
           data-testid="download-error"
         >
           {(() => {
-            const copy = formatError(downloadError.code, downloadError.message);
+            const copy = formatError(
+              download.downloadError.code,
+              download.downloadError.message,
+            );
             return (
               <>
                 <div className="mode-download-error-title">
                   {copy.title}
-                  {downloadError.model.name
-                    ? ` — ${downloadError.model.name}`
+                  {download.downloadError.model.name
+                    ? ` — ${download.downloadError.model.name}`
                     : ""}
                 </div>
                 {copy.body ? (
@@ -438,11 +118,11 @@ export function ModeSelector() {
             <button
               type="button"
               className="btn-primary"
-              onClick={handleDownloadRetry}
+              onClick={download.handleDownloadRetry}
             >
               Retry
             </button>
-            <button type="button" onClick={handleDownloadErrorDismiss}>
+            <button type="button" onClick={download.handleDownloadErrorDismiss}>
               Dismiss
             </button>
           </div>

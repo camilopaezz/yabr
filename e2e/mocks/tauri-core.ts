@@ -13,8 +13,6 @@ export function invoke<T>(
   switch (cmd) {
     case "get_config":
       return Promise.resolve(state.config.config as T);
-    case "set_config":
-      return Promise.resolve(undefined as T);
     case "detect_gpu":
       return Promise.resolve(state.config.gpuInfo as T);
     case "run_benchmark":

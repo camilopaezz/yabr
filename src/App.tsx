@@ -17,11 +17,7 @@ import {
   formatFirstRunGpuDegradeNotice,
   formatModelsUnavailableNotice,
 } from "./lib/errorCopy";
-import {
-  FALLBACK_DEFAULT_MODE,
-  PREFERRED_DEFAULT_MODE,
-  resolveMode,
-} from "./lib/models";
+import { FALLBACK_DEFAULT_MODE, PREFERRED_DEFAULT_MODE } from "./lib/models";
 import { showAppErrorNotice } from "./lib/showAppErrorNotice";
 import {
   invokeDetectGpu,
@@ -87,9 +83,8 @@ function App() {
           const gpuInfo = await invokeDetectGpu();
           if (cancelled) return;
           settingsStore.setState({ gpuInfo });
-          const benchmark = await invokeRunBenchmark();
+          await invokeRunBenchmark();
           if (cancelled) return;
-          settingsStore.setState({ benchmarkResult: benchmark });
           const updated = await invokeGetConfig();
           if (cancelled) return;
           settingsStore.setState({ ep: updated.execution_provider });
@@ -109,20 +104,20 @@ function App() {
         }
       }
 
-      // Resolve quality mode before the UI becomes interactive so Process never
-      // sees a preferred-but-not-downloaded model (e.g. Balanced).
+      // Single list_models for cold start: catalog + mode for ModeSelector / Process.
       // Uses the generic !ready blocker (not the first-run acceleration message).
       try {
         const models = await invokeListModels();
         if (!cancelled) {
-          settingsStore.setState({
-            mode: resolveMode(PREFERRED_DEFAULT_MODE, models),
-          });
+          // Seed preferred mode before catalog reconcile so resolveMode can
+          // pick Balanced when ready, else Turbo.
+          settingsStore.setState({ mode: PREFERRED_DEFAULT_MODE });
+          settingsStore.getState().applyModels(models);
         }
       } catch (err) {
         console.error("failed to list models during init", err);
         if (!cancelled) {
-          settingsStore.setState({ mode: FALLBACK_DEFAULT_MODE });
+          settingsStore.setState({ mode: FALLBACK_DEFAULT_MODE, models: [] });
           showAppErrorNotice(err, {
             severity: "warning",
             copy: formatModelsUnavailableNotice(),

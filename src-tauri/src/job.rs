@@ -80,10 +80,7 @@ fn run_inner(
 
     let model = crate::models::find_model(&job.model_id)?;
     if !model.bundled && !(deps.model_is_ready)(model)? {
-        return Err(AppError::Model(format!(
-            "model '{}' is not downloaded",
-            job.model_id
-        )));
+        return Err(crate::error::model_not_ready(&job.model_id));
     }
 
     deps.sink.on_progress("decoding", 10.0)?;
@@ -436,7 +433,7 @@ mod tests {
 
         let err = run(&job, &state, &deps).unwrap_err();
         assert!(
-            matches!(&err, AppError::ImageIo(msg) if msg.starts_with("open input:")),
+            matches!(&err, AppError::ImageUnreadable(msg) if msg.starts_with("open input:")),
             "expected image open error, got {:?}",
             err
         );
@@ -472,7 +469,7 @@ mod tests {
 
         let err = run(&job, &state, &deps).unwrap_err();
         match err {
-            AppError::Model(msg) => {
+            AppError::ModelNotReady(msg) => {
                 assert!(msg.contains("isnet-general-use"));
                 assert!(msg.contains("not downloaded"));
             }
@@ -591,7 +588,7 @@ mod tests {
 
         let run_inference = |model_id: &str, ep: &str, tensor: &Array4<f32>| {
             if ep.eq_ignore_ascii_case("directml") {
-                return Err(AppError::Inference("CUDA out of memory".into()));
+                return Err(crate::error::inference_error("CUDA out of memory"));
             }
             let model = crate::models::find_model(model_id)?;
             crate::inference::with_session(
@@ -647,7 +644,7 @@ mod tests {
         let recorder = Recorder::new();
 
         let run_inference = |_model_id: &str, _ep: &str, _tensor: &Array4<f32>| {
-            Err(AppError::Inference("CUDA out of memory".into()))
+            Err(crate::error::inference_error("CUDA out of memory"))
         };
 
         let deps = JobDeps {
@@ -658,7 +655,7 @@ mod tests {
         };
 
         let err = run(&job, &state, &deps).unwrap_err();
-        assert!(matches!(err, AppError::Inference(_)));
+        assert!(matches!(err, AppError::Oom(_)));
         assert!(recorder.fallbacks.lock().unwrap().is_empty());
         assert!(recorder.done.lock().unwrap().is_none());
         assert!(!output.exists());
@@ -676,9 +673,9 @@ mod tests {
             let mut n = calls.lock().unwrap();
             *n += 1;
             if ep.eq_ignore_ascii_case("directml") {
-                return Err(AppError::Inference("CUDA out of memory".into()));
+                return Err(crate::error::inference_error("CUDA out of memory"));
             }
-            Err(AppError::Inference("cpu retry failed: bad_alloc".into()))
+            Err(crate::error::inference_error("cpu retry failed: bad_alloc"))
         };
 
         let deps = JobDeps {
@@ -690,8 +687,8 @@ mod tests {
 
         let err = run(&job, &state, &deps).unwrap_err();
         assert!(
-            matches!(&err, AppError::Inference(msg) if msg.contains("cpu retry failed")),
-            "expected final CPU error, got {:?}",
+            matches!(&err, AppError::Oom(msg) if msg.contains("cpu retry failed")),
+            "expected final CPU OOM error, got {:?}",
             err
         );
         assert_eq!(*calls.lock().unwrap(), 2);
@@ -718,7 +715,7 @@ mod tests {
         let recorder = Recorder::new();
 
         let run_inference = |_model_id: &str, _ep: &str, _tensor: &Array4<f32>| {
-            Err(AppError::Inference("model produced no outputs".into()))
+            Err(crate::error::inference_error("model produced no outputs"))
         };
 
         let deps = JobDeps {
@@ -774,7 +771,7 @@ mod tests {
         let run_inference = |model_id: &str, ep: &str, tensor: &Array4<f32>| {
             *calls.lock().unwrap() += 1;
             if ep.eq_ignore_ascii_case("directml") {
-                return Err(AppError::Inference("CUDA out of memory".into()));
+                return Err(crate::error::inference_error("CUDA out of memory"));
             }
             // Must not be reached when cancel fires in on_fallback.
             let model = crate::models::find_model(model_id)?;

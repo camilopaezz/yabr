@@ -3,9 +3,7 @@ interface Window {
     config: {
       config: {
         execution_provider: string | null;
-        model_id: string | null;
         output_dir: string | null;
-        platform: string | null;
       };
       gpuInfo: {
         vendor: string;

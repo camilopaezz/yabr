@@ -8,9 +8,7 @@ use crate::error::AppError;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     pub execution_provider: Option<String>,
-    pub model_id: Option<String>,
     pub output_dir: Option<String>,
-    pub platform: Option<String>,
 }
 
 impl Config {
@@ -65,13 +63,24 @@ mod tests {
     fn config_serde_round_trip() {
         let config = Config {
             execution_provider: Some("cuda".to_string()),
-            model_id: Some("u2netp".to_string()),
             output_dir: Some("/tmp".to_string()),
-            platform: Some("linux".to_string()),
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.execution_provider(), "cuda");
-        assert_eq!(parsed.model_id, Some("u2netp".to_string()));
+        assert_eq!(parsed.output_dir, Some("/tmp".to_string()));
+    }
+
+    #[test]
+    fn config_ignores_unknown_fields() {
+        let json = r#"{
+            "execution_provider": "cpu",
+            "output_dir": null,
+            "model_id": "u2netp",
+            "platform": "linux"
+        }"#;
+        let parsed: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.execution_provider(), "cpu");
+        assert_eq!(parsed.output_dir, None);
     }
 }

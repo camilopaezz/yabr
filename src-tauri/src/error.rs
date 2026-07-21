@@ -22,57 +22,82 @@ pub mod code {
     pub const UNKNOWN: &str = "unknown";
 }
 
-/// Exact inner messages matched by [`error_code`]. Prefer these at construction sites.
-pub const MSG_ALREADY_PROCESSING: &str = "already processing";
-pub const MSG_DOWNLOAD_ALREADY_IN_PROGRESS: &str = "download already in progress";
-
+/// Product error enum. Catalog codes are typed variants so [`error_code`] is a
+/// pure match — do not re-parse free-form strings for classification.
+///
+/// Residual `Inference` / `Model` / `Pipeline` hold technical detail for cases
+/// without a dedicated variant; they map to generic wire codes.
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("not implemented")]
-    NotImplemented,
     #[error("cancelled")]
     Cancelled,
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("serde error: {0}")]
-    Serde(#[from] serde_json::Error),
+    #[error("already processing")]
+    Busy,
+    #[error("download already in progress")]
+    DownloadBusy,
+    #[error("network error: {0}")]
+    Network(String),
+    #[error("disk full: {0}")]
+    DiskFull(String),
+    #[error("model corrupt: {0}")]
+    ModelCorrupt(String),
+    #[error("model not ready: {0}")]
+    ModelNotReady(String),
+    #[error("unknown model: {0}")]
+    ModelUnknown(String),
+    #[error("out of memory: {0}")]
+    Oom(String),
+    #[error("gpu detection error: {0}")]
+    Gpu(String),
+    #[error("image unreadable: {0}")]
+    ImageUnreadable(String),
+    #[error("output failed: {0}")]
+    OutputFailed(String),
+    #[error("config error: {0}")]
+    Config(String),
+    #[error("dialog error: {0}")]
+    Dialog(String),
     #[error("inference error: {0}")]
     Inference(String),
     #[error("model error: {0}")]
     Model(String),
-    #[error("gpu detection error: {0}")]
-    Gpu(String),
     #[error("pipeline error: {0}")]
     Pipeline(String),
-    #[error("image io error: {0}")]
-    ImageIo(String),
-    #[error("dialog error: {0}")]
-    Dialog(String),
-    #[error("config error: {0}")]
-    Config(String),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("serde error: {0}")]
+    Serde(#[from] serde_json::Error),
 }
 
 /// Technical detail for the wire `message` field (no variant prefix).
 pub fn error_message(err: &AppError) -> String {
     match err {
-        AppError::NotImplemented => "not implemented".into(),
         AppError::Cancelled => "cancelled".into(),
+        AppError::Busy => "already processing".into(),
+        AppError::DownloadBusy => "download already in progress".into(),
         AppError::Io(e) => e.to_string(),
         AppError::Serde(e) => e.to_string(),
-        AppError::Inference(s)
-        | AppError::Model(s)
+        AppError::Network(s)
+        | AppError::DiskFull(s)
+        | AppError::ModelCorrupt(s)
+        | AppError::ModelNotReady(s)
+        | AppError::ModelUnknown(s)
+        | AppError::Oom(s)
         | AppError::Gpu(s)
-        | AppError::Pipeline(s)
-        | AppError::ImageIo(s)
+        | AppError::ImageUnreadable(s)
+        | AppError::OutputFailed(s)
+        | AppError::Config(s)
         | AppError::Dialog(s)
-        | AppError::Config(s) => s.clone(),
+        | AppError::Inference(s)
+        | AppError::Model(s)
+        | AppError::Pipeline(s) => s.clone(),
     }
 }
 
-/// Map an IO error into [`AppError::Model`], tagging disk-full with a stable message.
+/// Map an IO error into a model-path failure, tagging disk-full.
 pub fn model_io_error(op: &str, e: std::io::Error) -> AppError {
     if is_storage_full(&e) {
-        AppError::Model(format!("disk full during {op}: {e}"))
+        AppError::DiskFull(format!("disk full during {op}: {e}"))
     } else {
         AppError::Model(format!("{op} failed: {e}"))
     }
@@ -80,30 +105,56 @@ pub fn model_io_error(op: &str, e: std::io::Error) -> AppError {
 
 /// Decode/open failures → wire code [`code::IMAGE_UNREADABLE`].
 pub fn image_decode_error(detail: impl Into<String>) -> AppError {
-    AppError::ImageIo(detail.into())
+    AppError::ImageUnreadable(detail.into())
 }
 
-/// Encode failures → wire code [`code::OUTPUT_FAILED`] (message tagged `encode:`).
+/// Encode failures → wire code [`code::OUTPUT_FAILED`].
 pub fn image_encode_error(detail: impl Into<String>) -> AppError {
-    AppError::ImageIo(format!("encode: {}", detail.into()))
+    AppError::OutputFailed(detail.into())
 }
 
 /// Output-path write failures → `disk_full` when full, else [`code::OUTPUT_FAILED`].
 pub fn output_write_error(e: std::io::Error) -> AppError {
     if is_storage_full(&e) {
-        AppError::Io(e)
+        AppError::DiskFull(e.to_string())
     } else {
-        AppError::ImageIo(format!("output write: {e}"))
+        AppError::OutputFailed(format!("output write: {e}"))
     }
 }
 
 /// Config file IO → `disk_full` when full, else [`code::CONFIG`].
 pub fn config_io_error(e: std::io::Error) -> AppError {
     if is_storage_full(&e) {
-        AppError::Io(e)
+        AppError::DiskFull(e.to_string())
     } else {
         AppError::Config(e.to_string())
     }
+}
+
+/// Wrap an ORT/session failure; promote OOM via needle scan of the raw message.
+pub fn inference_error(detail: impl Into<String>) -> AppError {
+    let msg = detail.into();
+    if looks_like_oom_message(&msg) {
+        AppError::Oom(msg)
+    } else {
+        AppError::Inference(msg)
+    }
+}
+
+pub fn network_error(detail: impl Into<String>) -> AppError {
+    AppError::Network(detail.into())
+}
+
+pub fn model_corrupt(detail: impl Into<String>) -> AppError {
+    AppError::ModelCorrupt(detail.into())
+}
+
+pub fn model_not_ready(model_id: impl AsRef<str>) -> AppError {
+    AppError::ModelNotReady(format!("model '{}' is not downloaded", model_id.as_ref()))
+}
+
+pub fn model_unknown(model_id: impl AsRef<str>) -> AppError {
+    AppError::ModelUnknown(format!("unknown model: {}", model_id.as_ref()))
 }
 
 pub fn is_storage_full(err: &std::io::Error) -> bool {
@@ -131,13 +182,21 @@ pub fn is_storage_full(err: &std::io::Error) -> bool {
 pub fn error_code(err: &AppError) -> &'static str {
     match err {
         AppError::Cancelled => code::CANCELLED,
-        AppError::NotImplemented => code::UNKNOWN,
-        AppError::Serde(_) => code::UNKNOWN,
+        AppError::Busy => code::BUSY,
+        AppError::DownloadBusy => code::DOWNLOAD_BUSY,
+        AppError::Network(_) => code::NETWORK,
+        AppError::DiskFull(_) => code::DISK_FULL,
+        AppError::ModelCorrupt(_) => code::MODEL_CORRUPT,
+        AppError::ModelNotReady(_) => code::MODEL_NOT_READY,
+        AppError::ModelUnknown(_) => code::MODEL_UNKNOWN,
+        AppError::Oom(_) => code::OOM,
         AppError::Gpu(_) => code::GPU,
+        AppError::ImageUnreadable(_) => code::IMAGE_UNREADABLE,
+        AppError::OutputFailed(_) => code::OUTPUT_FAILED,
         AppError::Config(_) => code::CONFIG,
         AppError::Dialog(_) => code::DIALOG,
-        AppError::ImageIo(msg) => classify_image_io(msg),
-        AppError::Pipeline(_) => code::INFERENCE_FAILED,
+        AppError::Inference(_) | AppError::Pipeline(_) => code::INFERENCE_FAILED,
+        AppError::Model(_) | AppError::Serde(_) => code::UNKNOWN,
         AppError::Io(e) => {
             if is_storage_full(e) {
                 code::DISK_FULL
@@ -145,32 +204,11 @@ pub fn error_code(err: &AppError) -> &'static str {
                 code::UNKNOWN
             }
         }
-        AppError::Inference(msg) => classify_inference(msg),
-        AppError::Model(msg) => classify_model(msg),
     }
 }
 
-fn classify_image_io(msg: &str) -> &'static str {
-    // Construction helpers tag encode/write so decode stays image_unreadable.
-    let lower = msg.to_ascii_lowercase();
-    if lower.starts_with("encode:") || lower.starts_with("output write:") {
-        code::OUTPUT_FAILED
-    } else {
-        code::IMAGE_UNREADABLE
-    }
-}
-
-fn classify_inference(msg: &str) -> &'static str {
-    if msg == MSG_ALREADY_PROCESSING {
-        return code::BUSY;
-    }
-    if looks_like_oom_message(msg) {
-        return code::OOM;
-    }
-    code::INFERENCE_FAILED
-}
-
-/// Shared OOM needles for wire `oom` and GPU→CPU fallback (`is_likely_oom`).
+/// Shared OOM needles for promoting ORT/session messages to [`AppError::Oom`].
+/// Avoid bare `"oom"` — it false-positives on words like "room" / "zoom".
 pub fn looks_like_oom_message(msg: &str) -> bool {
     let lower = msg.to_ascii_lowercase();
     const NEEDLES: &[&str] = &[
@@ -193,36 +231,6 @@ pub fn looks_like_oom_message(msg: &str) -> bool {
     NEEDLES.iter().any(|n| lower.contains(n))
 }
 
-fn classify_model(msg: &str) -> &'static str {
-    if msg == MSG_DOWNLOAD_ALREADY_IN_PROGRESS {
-        return code::DOWNLOAD_BUSY;
-    }
-    let lower = msg.to_ascii_lowercase();
-    if lower.contains("sha-256 mismatch") {
-        return code::MODEL_CORRUPT;
-    }
-    if lower.contains("is not downloaded") || lower.contains("not downloaded") {
-        return code::MODEL_NOT_READY;
-    }
-    if lower.starts_with("unknown model:") || lower.contains("unknown model:") {
-        return code::MODEL_UNKNOWN;
-    }
-    if lower.starts_with("disk full") || lower.contains("disk full during") {
-        return code::DISK_FULL;
-    }
-    if lower.starts_with("request failed")
-        || lower.starts_with("download returned status")
-        || lower.starts_with("stream error")
-    {
-        return code::NETWORK;
-    }
-    // Write/create/flush/sync failures may still be full disk if kind was lost.
-    if lower.contains("no space left") || lower.contains("not enough space") {
-        return code::DISK_FULL;
-    }
-    code::UNKNOWN
-}
-
 impl Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -242,50 +250,41 @@ mod tests {
     #[test]
     fn cancelled_and_busy_codes() {
         assert_eq!(error_code(&AppError::Cancelled), code::CANCELLED);
-        assert_eq!(
-            error_code(&AppError::Inference(MSG_ALREADY_PROCESSING.into())),
-            code::BUSY
-        );
-        assert_eq!(
-            error_code(&AppError::Model(MSG_DOWNLOAD_ALREADY_IN_PROGRESS.into())),
-            code::DOWNLOAD_BUSY
-        );
+        assert_eq!(error_code(&AppError::Busy), code::BUSY);
+        assert_eq!(error_code(&AppError::DownloadBusy), code::DOWNLOAD_BUSY);
     }
 
     #[test]
     fn model_and_inference_catalog() {
         assert_eq!(
-            error_code(&AppError::Model("SHA-256 mismatch for x".into())),
+            error_code(&AppError::ModelCorrupt("SHA-256 mismatch for x".into())),
             code::MODEL_CORRUPT
         );
         assert_eq!(
-            error_code(&AppError::Model("model 'isnet' is not downloaded".into())),
+            error_code(&model_not_ready("isnet")),
             code::MODEL_NOT_READY
         );
+        assert_eq!(error_code(&model_unknown("nope")), code::MODEL_UNKNOWN);
         assert_eq!(
-            error_code(&AppError::Model("unknown model: nope".into())),
-            code::MODEL_UNKNOWN
-        );
-        assert_eq!(
-            error_code(&AppError::Model("request failed: timeout".into())),
+            error_code(&network_error("request failed: timeout")),
             code::NETWORK
         );
         assert_eq!(
-            error_code(&AppError::Model(
-                "download returned status 503 Service Unavailable".into()
+            error_code(&network_error(
+                "download returned status 503 Service Unavailable"
             )),
             code::NETWORK
         );
         assert_eq!(
-            error_code(&AppError::Model("disk full during write: ENOSPC".into())),
+            error_code(&AppError::DiskFull("disk full during write: ENOSPC".into())),
             code::DISK_FULL
         );
         assert_eq!(
-            error_code(&AppError::Inference("CUDA out of memory".into())),
+            error_code(&inference_error("CUDA out of memory")),
             code::OOM
         );
         assert_eq!(
-            error_code(&AppError::Inference("model produced no outputs".into())),
+            error_code(&inference_error("model produced no outputs")),
             code::INFERENCE_FAILED
         );
         assert_eq!(
@@ -293,7 +292,7 @@ mod tests {
             code::INFERENCE_FAILED
         );
         assert_eq!(
-            error_code(&AppError::ImageIo("bad png".into())),
+            error_code(&image_decode_error("bad png")),
             code::IMAGE_UNREADABLE
         );
         assert_eq!(
@@ -360,7 +359,7 @@ mod tests {
 
     #[test]
     fn serialize_is_code_message_object() {
-        let err = AppError::Model("SHA-256 mismatch for x".into());
+        let err = AppError::ModelCorrupt("SHA-256 mismatch for x".into());
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], code::MODEL_CORRUPT);
         assert_eq!(json["message"], "SHA-256 mismatch for x");

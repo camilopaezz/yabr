@@ -3,9 +3,7 @@ import { MODEL_REGISTRY, type ModelMeta } from "../../src/lib/models";
 export type MockConfig = {
   config: {
     execution_provider: string | null;
-    model_id: string | null;
     output_dir: string | null;
-    platform: string | null;
   };
   gpuInfo: {
     vendor: string;
@@ -49,9 +47,7 @@ function createDefaultConfig(): MockConfig {
   return {
     config: {
       execution_provider: "cpu",
-      model_id: "u2netp",
       output_dir: null,
-      platform: "linux",
     },
     gpuInfo: {
       vendor: "NVIDIA",

@@ -421,7 +421,6 @@ fn persist_ep(app: &AppHandle, ep: &str) -> Result<(), AppError> {
     let normalized = ep.to_lowercase();
     let mut config = crate::config::load_config(app)?;
     config.execution_provider = Some(normalized);
-    config.platform = Some(std::env::consts::OS.to_string());
     crate::config::save_config(app, &config)?;
     crate::inference::invalidate_all_sessions()?;
     Ok(())

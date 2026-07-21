@@ -59,24 +59,24 @@ pub fn load_session_from_bytes(model_bytes: &[u8], ep: &str) -> Result<Session, 
     let dml = is_directml(ep);
 
     let mut builder = Session::builder()
-        .map_err(|e| AppError::Inference(e.to_string()))?
+        .map_err(|e| crate::error::inference_error(e.to_string()))?
         .with_optimization_level(opt_level)
-        .map_err(|e| AppError::Inference(e.to_string()))?;
+        .map_err(|e| crate::error::inference_error(e.to_string()))?;
 
     if dml {
         // Required by DirectML EP; also reduces lingering reserved buffers.
         builder = builder
             .with_memory_pattern(false)
-            .map_err(|e| AppError::Inference(e.to_string()))?
+            .map_err(|e| crate::error::inference_error(e.to_string()))?
             .with_parallel_execution(false)
-            .map_err(|e| AppError::Inference(e.to_string()))?;
+            .map_err(|e| crate::error::inference_error(e.to_string()))?;
     }
 
     builder
         .with_execution_providers(providers)
-        .map_err(|e| AppError::Inference(e.to_string()))?
+        .map_err(|e| crate::error::inference_error(e.to_string()))?
         .commit_from_memory(model_bytes)
-        .map_err(|e| AppError::Inference(e.to_string()))
+        .map_err(|e| crate::error::inference_error(e.to_string()))
 }
 
 /// Drop every cached ORT session and ask the OS to return free pages.
@@ -200,7 +200,7 @@ where
         let cache = guard.get_or_insert_with(HashMap::new);
         match cache.get_mut(&key) {
             Some(session) => f(session),
-            None => Err(AppError::Inference(
+            None => Err(crate::error::inference_error(
                 "session missing from cache after reload".to_string(),
             )),
         }
@@ -262,17 +262,17 @@ fn insert_session_for_test(model_id: &str, ep: &str, session: Session) {
 
 pub fn run(session: &mut Session, input: &Array4<f32>) -> Result<ndarray::ArrayD<f32>, AppError> {
     let tensor_ref = TensorRef::from_array_view(input.view())
-        .map_err(|e| AppError::Inference(e.to_string()))?;
+        .map_err(|e| crate::error::inference_error(e.to_string()))?;
     let outputs = session
         .run(ort::inputs![tensor_ref])
-        .map_err(|e| AppError::Inference(e.to_string()))?;
+        .map_err(|e| crate::error::inference_error(e.to_string()))?;
     if outputs.len() == 0 {
-        return Err(AppError::Inference("model produced no outputs".to_string()));
+        return Err(crate::error::inference_error("model produced no outputs"));
     }
     let value = &outputs[0];
     value
         .try_extract_array::<f32>()
-        .map_err(|e| AppError::Inference(e.to_string()))
+        .map_err(|e| crate::error::inference_error(e.to_string()))
         .map(|view| view.into_owned())
 }
 
@@ -338,13 +338,13 @@ mod tests {
             ort::ep::CPU::default().build(),
         ];
         let session = Session::builder()
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
             .unwrap()
             .with_optimization_level(GraphOptimizationLevel::Level1)
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
             .unwrap()
             .with_execution_providers(providers)
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
             .unwrap()
             .commit_from_memory(U2NETP_MODEL_BYTES);
         let mut session = match session {
@@ -442,22 +442,22 @@ mod tests {
 
     #[test]
     fn is_likely_oom_detects_directml_and_generic_messages() {
-        assert!(is_likely_oom(&AppError::Inference(
-            "Non-zero status code ... DmlCommittedResourceAllocator.cpp ... 8007000E No hay suficientes recursos de memoria".into()
+        assert!(is_likely_oom(&crate::error::inference_error(
+            "Non-zero status code ... DmlCommittedResourceAllocator.cpp ... 8007000E No hay suficientes recursos de memoria"
         )));
-        assert!(is_likely_oom(&AppError::Inference(
-            "No hay suficientes recursos de memoria disponibles para completar esta operaci\u{00f3}n".into()
+        assert!(is_likely_oom(&crate::error::inference_error(
+            "No hay suficientes recursos de memoria disponibles para completar esta operaci\u{00f3}n"
         )));
-        assert!(is_likely_oom(&AppError::Inference("CUDA out of memory".into())));
-        assert!(is_likely_oom(&AppError::Inference("std::bad_alloc".into())));
-        assert!(!is_likely_oom(&AppError::Inference(
-            "model produced no outputs".into()
+        assert!(is_likely_oom(&crate::error::inference_error("CUDA out of memory")));
+        assert!(is_likely_oom(&crate::error::inference_error("std::bad_alloc")));
+        assert!(!is_likely_oom(&crate::error::inference_error(
+            "model produced no outputs"
         )));
         // Bare "oom" was removed — incidental substrings must not wipe the cache.
-        assert!(!is_likely_oom(&AppError::Inference(
-            "failed in room setup".into()
+        assert!(!is_likely_oom(&crate::error::inference_error(
+            "failed in room setup"
         )));
-        assert!(!is_likely_oom(&AppError::Inference("zoom level invalid".into())));
+        assert!(!is_likely_oom(&crate::error::inference_error("zoom level invalid")));
     }
 
     #[test]
@@ -470,7 +470,7 @@ mod tests {
         };
 
         let err: Result<(), AppError> = with_session("u2netp", EP_CPU, load, |_session| {
-            Err(AppError::Inference("model produced no outputs".into()))
+            Err(crate::error::inference_error("model produced no outputs"))
         });
         assert!(err.is_err());
 
@@ -505,8 +505,8 @@ mod tests {
             EP_CPU,
             || Ok(U2NETP_MODEL_BYTES.to_vec()),
             |_s| {
-                Err(AppError::Inference(
-                    "DmlCommittedResourceAllocator 8007000E out of memory".into(),
+                Err(crate::error::inference_error(
+                    "DmlCommittedResourceAllocator 8007000E out of memory",
                 ))
             },
         );

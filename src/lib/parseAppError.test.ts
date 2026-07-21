@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ERROR_CODES,
-  isBusyError,
-  isCancelledError,
-  parseAppError,
-} from "./parseAppError";
+import { ERROR_CODES, isCancelledError, parseAppError } from "./parseAppError";
 
 describe("parseAppError", () => {
   it("accepts structured objects", () => {
@@ -63,17 +58,11 @@ describe("parseAppError", () => {
   });
 });
 
-describe("isCancelledError / isBusyError", () => {
+describe("isCancelledError", () => {
   it("detects cancelled via code", () => {
     expect(isCancelledError({ code: "cancelled", message: "cancelled" })).toBe(
       true,
     );
     expect(isCancelledError({ code: "network", message: "x" })).toBe(false);
-  });
-
-  it("detects busy codes", () => {
-    expect(isBusyError({ code: "busy", message: "x" })).toBe(true);
-    expect(isBusyError({ code: "download_busy", message: "x" })).toBe(true);
-    expect(isBusyError({ code: "unknown", message: "x" })).toBe(false);
   });
 });

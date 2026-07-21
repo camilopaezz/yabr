@@ -126,8 +126,3 @@ function classifyLegacyString(message: string): AppErrorPayload {
 export function isCancelledError(err: unknown): boolean {
   return parseAppError(err).code === ERROR_CODES.cancelled;
 }
-
-export function isBusyError(err: unknown): boolean {
-  const code = parseAppError(err).code;
-  return code === ERROR_CODES.busy || code === ERROR_CODES.download_busy;
-}

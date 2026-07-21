@@ -10,9 +10,7 @@ const FIXTURE_PATH = path.join(__dirname, "fixtures", "sample.png");
 const DEFAULT_CONFIG = {
   config: {
     execution_provider: "cpu",
-    model_id: "u2netp",
     output_dir: "/swiftmask/e2e/output",
-    platform: "linux",
   },
   gpuInfo: {
     vendor: "NVIDIA",

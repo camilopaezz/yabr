@@ -54,21 +54,22 @@ pub struct ModelEntry {
     pub bundled: bool,
 }
 
+/// Runtime model listing for IPC. Flattens `ModelEntry` so FE JSON stays flat:
+/// `{ id, name, ..., downloaded }` (no nested `entry` object).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMeta {
-    pub id: String,
-    pub name: String,
-    pub file: String,
-    pub size_bytes: u64,
-    pub input_size: u32,
-    pub mean: Vec<f32>,
-    pub std: Vec<f32>,
-    pub license: String,
-    pub source: String,
-    pub download_url: String,
-    pub sha256: String,
-    pub bundled: bool,
+    #[serde(flatten)]
+    pub entry: ModelEntry,
     pub downloaded: bool,
+}
+
+impl ModelMeta {
+    pub fn from_entry(entry: &ModelEntry, downloaded: bool) -> Self {
+        Self {
+            entry: entry.clone(),
+            downloaded,
+        }
+    }
 }
 
 fn registry() -> &'static [ModelEntry] {
@@ -145,7 +146,7 @@ pub fn find_model(model_id: &str) -> Result<&'static ModelEntry, AppError> {
     static_registry()
         .iter()
         .find(|m| m.id == model_id)
-        .ok_or_else(|| AppError::Model(format!("unknown model: {}", model_id)))
+        .ok_or_else(|| crate::error::model_unknown(model_id))
 }
 
 pub fn model_cache_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -183,21 +184,7 @@ pub fn list_models(app: &AppHandle) -> Result<Vec<ModelMeta>, AppError> {
         .map(|m| {
             // Empty files (failed/killed Windows downloads) must not count as ready.
             let downloaded = m.bundled || is_nonempty_file(&cache_dir.join(&m.file));
-            ModelMeta {
-                id: m.id.clone(),
-                name: m.name.clone(),
-                file: m.file.clone(),
-                size_bytes: m.size_bytes,
-                input_size: m.input_size,
-                mean: m.mean.clone(),
-                std: m.std.clone(),
-                license: m.license.clone(),
-                source: m.source.clone(),
-                download_url: m.download_url.clone(),
-                sha256: m.sha256.clone(),
-                bundled: m.bundled,
-                downloaded,
-            }
+            ModelMeta::from_entry(m, downloaded)
         })
         .collect())
 }
@@ -482,7 +469,7 @@ where
         on_progress("verify", 100.0);
         return Ok(());
     }
-    Err(AppError::Model(format!(
+    Err(crate::error::model_corrupt(format!(
         "SHA-256 mismatch for {}",
         model.id
     )))
@@ -506,10 +493,10 @@ where
         .get(&model.download_url)
         .send()
         .await
-        .map_err(|e| AppError::Model(format!("request failed: {e}")))?;
+        .map_err(|e| crate::error::network_error(format!("request failed: {e}")))?;
 
     if !response.status().is_success() {
-        return Err(AppError::Model(format!(
+        return Err(crate::error::network_error(format!(
             "download returned status {}",
             response.status()
         )));
@@ -535,7 +522,7 @@ where
         if let Some(ds) = cancel {
             ds.check_cancel()?;
         }
-        let chunk = chunk.map_err(|e| AppError::Model(format!("stream error: {e}")))?;
+        let chunk = chunk.map_err(|e| crate::error::network_error(format!("stream error: {e}")))?;
         file.write_all(&chunk)
             .await
             .map_err(|e| crate::error::model_io_error("write", e))?;
@@ -661,6 +648,21 @@ mod tests {
     fn registry_has_four_models() {
         assert_eq!(registry().len(), 4);
         assert!(registry().iter().any(|m| m.id == "u2netp"));
+    }
+
+    #[test]
+    fn model_meta_serializes_flat_for_ipc() {
+        let entry = find_model("u2netp").unwrap();
+        let meta = ModelMeta::from_entry(entry, true);
+        let value = serde_json::to_value(&meta).unwrap();
+        let obj = value.as_object().unwrap();
+        // FE expects top-level fields, not a nested "entry" object.
+        assert!(!obj.contains_key("entry"));
+        assert_eq!(obj.get("id").and_then(|v| v.as_str()), Some("u2netp"));
+        assert_eq!(obj.get("name").and_then(|v| v.as_str()), Some("Turbo"));
+        assert_eq!(obj.get("downloaded").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(obj.get("bundled").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(obj.get("file").and_then(|v| v.as_str()), Some("u2netp.onnx"));
     }
 
     #[test]

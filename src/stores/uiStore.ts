@@ -1,4 +1,5 @@
-import { create } from "zustand";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 
 export type NoticeSeverity = "error" | "warning" | "info";
 
@@ -24,7 +25,7 @@ type UiState = {
 
 let noticeSeq = 0;
 
-export const uiStore = create<UiState>((set) => ({
+export const uiStore = createStore<UiState>((set) => ({
   modalBlocksShortcuts: false,
   setModalBlocksShortcuts: (blocked) => set({ modalBlocksShortcuts: blocked }),
 
@@ -42,4 +43,8 @@ export const uiStore = create<UiState>((set) => ({
   dismissNotice: () => set({ notice: null }),
 }));
 
-export const useUiStore = uiStore;
+export function useUiStore(): UiState;
+export function useUiStore<T>(selector: (state: UiState) => T): T;
+export function useUiStore<T>(selector?: (state: UiState) => T): UiState | T {
+  return useStore(uiStore, selector ?? ((state) => state as unknown as T));
+}

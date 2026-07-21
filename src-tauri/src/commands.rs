@@ -36,7 +36,7 @@ impl JobSink for AppJobSink {
                     pct,
                 },
             )
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
     }
 
     fn on_done(&self, output_path: &str, timings: &JobTimings) -> Result<(), AppError> {
@@ -49,7 +49,7 @@ impl JobSink for AppJobSink {
                     timings: timings.clone(),
                 },
             )
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
     }
 
     fn on_error(&self, err: &AppError) {
@@ -74,7 +74,7 @@ impl JobSink for AppJobSink {
                     to_ep: to_ep.to_string(),
                 },
             )
-            .map_err(|e| AppError::Inference(e.to_string()))
+            .map_err(|e| crate::error::inference_error(e.to_string()))
     }
 }
 
@@ -82,7 +82,7 @@ impl JobSink for AppJobSink {
 pub async fn detect_gpu() -> Result<GpuInfo, AppError> {
     tauri::async_runtime::spawn_blocking(crate::gpu::detect_gpu)
         .await
-        .map_err(|e| AppError::Inference(e.to_string()))?
+        .map_err(|e| crate::error::inference_error(e.to_string()))?
 }
 
 #[tauri::command]
@@ -90,7 +90,7 @@ pub async fn run_benchmark(app: AppHandle) -> Result<BenchmarkResult, AppError> 
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || crate::gpu::run_benchmark(&app))
         .await
-        .map_err(|e| AppError::Inference(e.to_string()))?
+        .map_err(|e| crate::error::inference_error(e.to_string()))?
 }
 
 #[tauri::command]
@@ -223,7 +223,7 @@ pub async fn remove_image_background(
         // JoinError path: worker may have panicked before `_guard` ran, or
         // the runtime aborted the task — ensure the slot is free either way.
         processing_state_for_join.release();
-        AppError::Inference(e.to_string())
+        crate::error::inference_error(e.to_string())
     })?;
     Ok(())
 }
@@ -301,9 +301,4 @@ pub async fn get_runtime_info() -> Result<RuntimeInfo, AppError> {
 #[tauri::command]
 pub async fn get_config(app: AppHandle) -> Result<Config, AppError> {
     crate::config::load_config(&app)
-}
-
-#[tauri::command]
-pub async fn set_config(app: AppHandle, config: Config) -> Result<(), AppError> {
-    crate::config::save_config(&app, &config)
 }
