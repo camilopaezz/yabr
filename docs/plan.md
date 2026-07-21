@@ -1,92 +1,74 @@
-# SwiftMask — Background Removal Desktop App
+# SwiftMask — product baseline
 
-A cross-platform, local-first, GPU-accelerated background removal application.
-Open source (MIT), no telemetry, no cloud. All inference runs on the user's hardware.
+Cross-platform, local-first, GPU-accelerated background removal. MIT, no telemetry, no cloud.
 
-> Status: **MVP implemented** (v0.1.0). Architectural decisions A1–A19 remain the
-> product baseline. Implementation details live in the code — this doc is for
-> *why*, not *what*. Revisit decisions by editing this file.
+This file is **why**, not a tour of the tree. Implementation lives in the code; git workflow in [`workflow.md`](workflow.md).
 
 ---
 
-## 1. Architectural Decisions (locked)
+## Architectural decisions (locked)
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
-| A1 | Desktop shell | **Tauri 2.0 + Rust** | Small binary, native EP access via `ort`, multi-platform, low RAM. |
-| A2 | Inference embedding | **In-process `ort` crate** | No IPC serialization overhead, single process, direct EP control. |
-| A3 | GPU EP strategy | **DirectML (Win) + CUDA (Linux NVIDIA) + CPU fallback (Linux AMD) + CoreML (macOS, later)** | One Windows binary covers NVIDIA+AMD; Linux AMD falls back to CPU (ROCm packaging cost too high for MVP). |
-| A4 | Model registry | **`u2netp`, `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`** | Covers Turbo / Balanced / Balanced+ / Max Quality. All have ONNX exports. BRIA allowed (non-commercial OSS). |
-| A5 | Feature scope (MVP) | **Drag-drop + preview + export PNG transparent (single image at a time)** | Focused MVP; no batch queue, no post-processing, no video, no manual editor. |
-| A6 | Frontend stack | **React + TypeScript + Vite** | Mature ecosystem, drag-drop/canvas libs, official Tauri template. |
-| A7 | Release targets (v1) | **Windows x64 (NSIS + MSI) + Linux x64 (AppImage + deb + rpm)** | Author's hardware (Ryzen 5 4600G). macOS deferred (no device to test). |
-| A8 | Model delivery | **On-demand lazy download from HuggingFace + cache in appData** | Small installer (~30 MB); user only downloads modes they use. |
-| A9 | GPU detection | **Auto-detect + silent benchmark + manual override** | iGPU (Vega 7) sometimes slower with DirectML than CPU — benchmark prevents bad defaults. |
-| A10 | Rust layout | **Single crate in `src-tauri/`** | Sufficient for MVP; refactor to workspace only if it grows. |
-| A11 | Frontend state + IPC | **Zustand + Tauri events for progress/cancel** | Lightweight state; events stream long inference (up to ~40 s on CPU). |
-| A12 | Export options | **PNG with alpha (transparent) only** | Covers 90% of use; minimal postprocessing. |
-| A13 | Testing | **Rust unit tests (image pipeline) + Vitest + inference smoke test + E2E (Playwright/WebDriver)** | Catch regressions in mask pipeline; verify full flow. |
-| A14 | Name & license | **`SwiftMask` + MIT** | Permissive; compatible with all model licenses used. |
-| A15 | Image pipeline | **`image` + `imageproc` crates** | Proven by reference projects; sufficient for MVP. |
-| A16 | Updates & telemetry | **Tauri updater (signed) + zero telemetry** | Local-first privacy promise; logs local only. |
-| A17 | Bundled benchmark model | **Embed `u2netp` via `include_bytes!`** | 4.7 MB negligible; offline first-run benchmark + offline Turbo. |
-| A18 | Output filename | **`<stem>-nobg-<modelId>.png` next to input (or chosen output dir) + overwrite prompt** | Predictable, disambiguates re-runs across modes, keeps inputs untouched. |
-| A19 | Theme | **Follow system theme via `prefers-color-scheme`** | Modern expectation; minimal extra work for MVP. |
+| A1 | Desktop shell | **Tauri 2 + Rust** | Small binary, native EP access via `ort`, multi-platform, low RAM. |
+| A2 | Inference embedding | **In-process `ort`** | No IPC serialization overhead; direct EP control. |
+| A3 | GPU EP strategy | **DirectML (Win) + CUDA (Linux NVIDIA) + CPU fallback; CoreML later** | One Windows binary covers NVIDIA+AMD. Linux AMD → CPU (ROCm packaging cost too high for v1). |
+| A4 | Model registry | **`u2netp`, `isnet-general-use`, `RMBG-1.4`, `RMBG-2.0`** | Turbo / Balanced / Balanced+ / Max Quality. BRIA models are CC BY-NC 4.0 (non-commercial). |
+| A5 | Feature scope (v1) | **Single image: open/drop → process → PNG alpha** | No batch queue, post-edit, video, or manual mask editor. |
+| A6 | Frontend | **React + TypeScript + Vite + Zustand** | Mature UI stack; events for long inference. |
+| A7 | Release targets (v1) | **Windows x64 (NSIS + MSI) + Linux x64 (AppImage + deb + rpm)** | macOS deferred (no device to test). |
+| A8 | Model delivery | **Lazy download from HuggingFace + appData cache** | Small installer; user only downloads modes they use. |
+| A9 | GPU detection | **Auto-detect + silent benchmark + manual override** | iGPU (e.g. Vega) can be slower with DirectML than CPU. |
+| A10 | Rust layout | **Single crate in `src-tauri/`** | Refactor to workspace only if it grows. |
+| A11 | Progress / cancel | **Tauri events + shared cancel token** | Inference can run tens of seconds on CPU. |
+| A12 | Export | **PNG with alpha only** | Covers most use; minimal postprocessing. |
+| A13 | Testing | **Rust unit + inference smoke + Vitest + mocked Playwright** | Real Tauri WebDriver still open (see below). |
+| A14 | Name & license | **`SwiftMask` + MIT** | Compatible with model licenses used. |
+| A15 | Image pipeline | **`image` + `imageproc`** | Enough for mask I/O and light feathering. |
+| A16 | Updates & telemetry | **Signed Tauri updater (planned) + zero telemetry** | Local-first; logs local only when added. |
+| A17 | Bundled benchmark model | **Embed `u2netp` via `include_bytes!`** | Offline first-run benchmark + offline Turbo. |
+| A18 | Output filename | **`<stem>-nobg-<modelId>.png` + overwrite prompt** | Predictable; keeps inputs untouched. |
+| A19 | Theme | **Follow system via `prefers-color-scheme`** | Minimal MVP cost. |
 
 ---
 
-## 2. Non-obvious constraints
+## Non-obvious constraints
 
-These are easy to get wrong if you only skim the code.
+Easy to get wrong if you only skim the code.
 
-**Drag-drop is Tauri-native, not HTML5.** Tauri intercepts OS file drops; the HTML5 `drop` event does not fire for files in its webview (tauri#2768, #5555). `useTauriFileDrop` listens for `tauri://drag-drop` and gets **paths** so Rust can `std::fs` read — image bytes never cross IPC. React dropzone libs do not work out of the box.
+**Drag-drop is Tauri-native, not HTML5.** Tauri intercepts OS file drops; the HTML5 `drop` event does not fire for files in its webview (tauri#2768, #5555). `useTauriFileDrop` listens for `tauri://drag-drop` and gets **paths** so Rust can read via `std::fs` — image bytes never cross IPC. React dropzone libs do not work out of the box.
 
-**One Linux binary, not two.** Built with CUDA feature; on AMD the CUDA EP fails to load and ORT falls back to CPU. Keeps distribution simple; ROCm is post-MVP.
+**One Linux binary, not two.** Built with the CUDA feature; on AMD the CUDA EP fails to load and ORT falls back to CPU. Keeps distribution simple. Core ORT is **statically linked** (`ort` `download-binaries`) — there is no separate `libonnxruntime.so` rpath problem. CUDA still needs host NVIDIA drivers/libs; missing stack → CPU.
 
-**Models: Rust is source of truth.** Registry + SHA-256 live in `models.rs`; `bun run gen:models` codegen's static metadata to `models.generated.ts`. Download state comes only from `list_models` at runtime. BRIA models are CC BY-NC 4.0 — document non-commercial use.
+**Models: Rust is source of truth.** Registry + SHA-256 live in `models.rs`; `bun run gen:models` codegen’s static metadata to `models.generated.ts`. Download state comes only from `list_models` at runtime. Pin HF revisions by commit SHA; document CC-BY-NC for BRIA in README and in-app.
 
-**Postprocess:** all current models emit a single-channel mask; min-max normalize to [0,255] (no second sigmoid — that produced near-uniform masks). Heavier models get a light Gaussian blur (radius 1.0) for edge feathering. Match rembg's session behavior where applicable.
+**Postprocess:** current models emit a single-channel mask; min-max normalize to [0,255] (no second sigmoid — that produced near-uniform masks). Heavier models get a light Gaussian blur (radius 1.0) for edge feathering.
 
-**Domain ownership on the FE:** `currentImage.ts` owns drop acceptance, output path sync, process/overwrite (A18), event listeners, cancel/clear. Components stay thin over stores + domain calls.
+**Frontend domain ownership:** `currentImage.ts` owns drop acceptance, output path sync, process/overwrite (A18), event listeners, cancel/clear. Components stay thin over stores + domain calls.
 
----
+**Errors:** wire shape is `{ code, message }` (`error.rs` / `parseAppError` / `errorCopy`). FE owns user-facing copy; technical `message` is for logs/support later. GPU OOM retries on CPU for that job only — does **not** change Settings EP.
 
-## 3. Product flows (intent)
-
-**First-run:** no `config.json` → detect + benchmark with bundled `u2netp` (≤5 s) → persist winning EP → main screen. Non-Turbo models download on first use (SHA-256 verify).
-
-**Inference:** single job `{id, input_path, output_path, model_id}` at a time; progress via events; cancel via shared token. See `job.rs` / `commands.rs`.
+**MSI versioning:** WiX ProductVersion is numeric only. SemVer pre-releases (e.g. `0.9.0-beta.1`) need `bundle.windows.wix.version` set to a numeric form (see `tauri.conf.json` / [`workflow.md`](workflow.md)).
 
 ---
 
-## 4. Release & distribution (open work)
+## Out of scope for v1
 
-- **Targets (v1):** NSIS + MSI (Windows x64); AppImage + deb + rpm (Linux x64). Installer ~30 MB + lazy models.
-- **Signing:** Windows builds unsigned for now (SmartScreen expected). Updater key pair planned for A16; not wired yet.
-- **CI:** Windows + Ubuntu builds; installers as artifacts (14-day retention). **Release workflow** exists (`.github/workflows/release.yml`); first public tag still pending.
-- **Linux AppImage:** core ORT is **statically linked** via `ort` `download-binaries` — the classic dynamic `libonnxruntime.so` rpath footgun does **not** apply. Ubuntu CI AppImages validated outside CI (Arch, including CUDA). Remaining work is install docs + host NVIDIA deps for CUDA, not an AppImage rpath patch. Details: [`production-readiness.md`](production-readiness.md) §2.3.
+macOS/CoreML, ROCm, batch queue, mask threshold controls, background replacement, video, tiling for >~4K images, manual mask editor.
 
 ---
 
-## 5. Roadmap status
+## Open work (ship / 1.0)
 
-| Phase | Status | Notes |
-|---|---|---|
-| 0–7 Scaffold → output polish | ✅ | MVP surface complete |
-| 8 E2E | 🟡 | Mocked Playwright on every PR to `main`; real Tauri WebDriver not wired. See `production-readiness.md` §2.2 |
-| 9 Distribution | 🟡 | Release workflow + CHANGELOG + NC notice + user README/screenshots done; missing published tag, updater/signing |
+Not re-documented elsewhere as a living backlog:
 
-**Out of scope for v1:** macOS/CoreML, ROCm, batch queue, mask threshold controls, background replacement, video, tiling >4096 px, manual mask editor.
-
----
-
-## 6. Risks & mitigations
-
-| Risk | Mitigation |
-|---|---|
-| DirectML slower than CPU on Vega-class iGPUs | First-run benchmark picks CPU if it wins; user can override. |
-| `RMBG-2.0` / BiRefNet OOM on low-VRAM iGPUs | Catch OOM at session load, fall back to CPU, show a UI notice. |
-| Linux AppImage fails for strangers | Static ORT linkage; AppImage bundles GTK/WebKit via linuxdeploy; CI AppImages validated on Arch incl. CUDA. Document NVIDIA host deps + WebKit workarounds. |
-| HuggingFace download flakiness | Retry with backoff, resume via `Range`, verify SHA-256. |
-| BRIA license drift | Pin exact model revisions by commit SHA; document CC-BY-NC in README and in-app. |
-| ONNX opset 19 DeformConv not in stable ORT | RMBG/BiRefNet exports we use are opset ≤17; revisit if switching export style. |
+| Item | Notes |
+|------|--------|
+| Signed auto-updater | A16 — `tauri-plugin-updater` + key pair in CI secrets |
+| Real desktop E2E | `e2e/tauri-webdriver.config.ts` is a stub; mocked Playwright only proves UI wiring |
+| About / licenses panel | MIT app + per-model attributions (NC gate for RMBG is already in) |
+| Local diagnostics | Rotating local log + “copy diagnostics” (no network) |
+| Large-image guard | Fail clearly or warn before OOM/slow runs on huge inputs |
+| First-run empty-state hint | Beyond the acceleration/benchmark spinner |
+| `ort` 2.0 RC | Release-candidate dependency; revisit when stable |
+| CSP | `null` in `tauri.conf.json` — low risk for local app; tighten later |

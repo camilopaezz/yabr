@@ -2,7 +2,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
-/// Stable wire codes for FE classification (see docs/user-visible-errors-plan.md).
+/// Stable wire codes for FE classification (`parseAppError` / `errorCopy` on the FE).
 pub mod code {
     pub const CANCELLED: &str = "cancelled";
     pub const BUSY: &str = "busy";
