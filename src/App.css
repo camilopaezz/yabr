@@ -1131,13 +1131,15 @@ body.is-slider-dragging * {
 }
 
 .modal-header-start {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   min-width: 0;
-  /* Reserve space so the title does not jump when Back fades in. */
-  padding-left: 2.1em;
+  transition: gap var(--duration-normal) var(--ease-out);
+}
+
+.modal-header-start.has-back {
+  gap: 8px;
 }
 
 .modal-title {
@@ -1152,23 +1154,36 @@ body.is-slider-dragging * {
   line-height: 1;
 }
 
+/* In-flow Back: collapsed on Settings, expands next to title on About.
+   Avoids permanent title indent on Settings and absolute overlap on About. */
 .modal-back {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  translate: 0 -50%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  max-width: 0;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateX(-6px);
+  border-color: transparent;
   pointer-events: none;
+  transform: translateX(-6px);
   transition:
+    max-width var(--duration-normal) var(--ease-out),
+    padding var(--duration-normal) var(--ease-out),
     opacity var(--duration-normal) var(--ease-out),
-    transform var(--duration-normal) var(--ease-out);
+    transform var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out);
 }
 
 .modal-back.is-visible {
+  max-width: 3em;
+  padding-left: 0.25em;
+  padding-right: 0.55em;
   opacity: 1;
   transform: none;
   pointer-events: auto;
+  border-color: var(--border);
 }
 
 /*
@@ -1540,6 +1555,7 @@ body.is-slider-dragging * {
   .modal-card,
   .modal-view,
   .modal-back,
+  .modal-header-start,
   .modal-title,
   .download-modal-backdrop,
   .download-modal-card,

@@ -345,7 +345,11 @@ function App() {
                 aria-labelledby="settings-shell-title"
               >
                 <div className="modal-header">
-                  <div className="modal-header-start">
+                  <div
+                    className={`modal-header-start${
+                      settingsView === "about" ? " has-back" : ""
+                    }`}
+                  >
                     <button
                       ref={aboutBackRef}
                       type="button"
