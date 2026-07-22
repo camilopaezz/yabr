@@ -1130,20 +1130,138 @@ body.is-slider-dragging * {
   margin-bottom: 16px;
 }
 
+.modal-header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .modal-header h2 {
   margin: 0;
   font-size: 1.1rem;
 }
 
+.modal-back,
 .modal-close {
   padding: 0.25em 0.55em;
   line-height: 1;
+}
+
+.modal-back {
+  flex-shrink: 0;
 }
 
 .settings-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.settings-footer {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-about-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent, var(--fg-muted));
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-about-link:hover {
+  color: var(--fg);
+}
+
+.about-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 0.9rem;
+}
+
+.about-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.about-app-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.about-versions {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.about-mit {
+  margin: 0;
+  color: var(--fg);
+  line-height: 1.45;
+}
+
+.about-mit a,
+.about-models-table a,
+.about-links a {
+  color: var(--accent, var(--fg-muted));
+}
+
+.about-mit a:hover,
+.about-models-table a:hover,
+.about-links a:hover {
+  color: var(--fg);
+}
+
+.about-models-heading {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.about-models-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.about-models-table th,
+.about-models-table td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  vertical-align: top;
+}
+
+.about-models-table th {
+  font-weight: 500;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.about-models-table code {
+  font-size: 0.8em;
+}
+
+.about-nc-footnote {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.about-links {
+  font-size: 0.85rem;
 }
 
 .settings-field {

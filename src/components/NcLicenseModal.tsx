@@ -1,4 +1,5 @@
 import { NC_LICENSE_MODAL_COPY } from "../lib/ncLicense";
+import { openExternalUrl } from "../lib/openExternalUrl";
 
 export type NcLicenseModalProps = {
   open: boolean;
@@ -29,8 +30,10 @@ export function NcLicenseModal({
         <p className="nc-license-modal-license">
           <a
             href={NC_LICENSE_MODAL_COPY.licenseUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.preventDefault();
+              void openExternalUrl(NC_LICENSE_MODAL_COPY.licenseUrl);
+            }}
           >
             {NC_LICENSE_MODAL_COPY.licenseLabel}
           </a>

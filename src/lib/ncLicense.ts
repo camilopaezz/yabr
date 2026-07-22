@@ -1,8 +1,7 @@
+import { licenseUrlFor } from "./licenseUrls";
 import { isModelReady, type ModelMeta } from "./models";
 
 export const NC_LICENSE_ACK_KEY = "swiftmask:nc-license-ack";
-
-const NC_LICENSE_URL = "https://creativecommons.org/licenses/by-nc/4.0/";
 
 export function isNonCommercialModel(
   model: Pick<ModelMeta, "license">,
@@ -48,14 +47,16 @@ export function needsNcLicenseAck(
   );
 }
 
+const NC_LICENSE_LABEL = "CC BY-NC 4.0";
+
 export const NC_LICENSE_MODAL_COPY = {
   title: "Non-commercial license",
   summary:
     "Balanced+ and Max Quality use models under CC BY-NC 4.0. You may use outputs for personal or non-commercial work only — not for paid work, client deliverables, product photography, or other commercial purposes.",
   commercialHint:
     "For commercial use, choose Turbo or Balanced, or obtain a separate license from the model rights holder (BRIA).",
-  licenseLabel: "CC BY-NC 4.0",
-  licenseUrl: NC_LICENSE_URL,
+  licenseLabel: NC_LICENSE_LABEL,
+  licenseUrl: licenseUrlFor(NC_LICENSE_LABEL) ?? "",
   acceptLabel: "I understand",
   cancelLabel: "Cancel",
 } as const;

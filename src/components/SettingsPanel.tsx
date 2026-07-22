@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useState } from "react";
 import { epLabel } from "../lib/epLabel";
 import { showAppErrorNotice } from "../lib/showAppErrorNotice";
 import {
@@ -14,6 +14,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 
 export type SettingsPanelProps = {
   visible: boolean;
+  onOpenAbout: () => void;
+  aboutEntryRef?: RefObject<HTMLButtonElement | null>;
 };
 
 function formatVram(bytes: number): string {
@@ -29,13 +31,16 @@ function formatSeconds(seconds: number): string {
   return `${seconds.toFixed(3)}s`;
 }
 
-export function SettingsPanel({ visible }: SettingsPanelProps) {
+export function SettingsPanel({
+  visible,
+  onOpenAbout,
+  aboutEntryRef,
+}: SettingsPanelProps) {
   const {
     ep,
     outputDir,
     theme,
     gpuInfo,
-    runtimeInfo,
     lastJobTimings,
     setEp: setEpInStore,
     setOutputDir,
@@ -167,31 +172,22 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
         </button>
       </div>
 
-      {(gpuInfo || runtimeInfo) && (
+      {gpuInfo && (
         <div className="settings-meta">
-          {gpuInfo && (
-            <>
-              <div>GPU: {gpuInfo.vendor}</div>
-              <div>
-                VRAM:{" "}
-                {gpuInfo.vram_bytes != null
-                  ? formatVram(gpuInfo.vram_bytes)
-                  : "Unknown"}
-              </div>
-              <div>
-                EPs:{" "}
-                {gpuInfo.available_eps
-                  .map((epOption) => epLabel(epOption))
-                  .join(", ")}
-              </div>
-              <div>Opt: {gpuInfo.optimization}</div>
-            </>
-          )}
-          {runtimeInfo && (
-            <div>
-              App: {runtimeInfo.app_version} · ORT: {runtimeInfo.ort_version}
-            </div>
-          )}
+          <div>GPU: {gpuInfo.vendor}</div>
+          <div>
+            VRAM:{" "}
+            {gpuInfo.vram_bytes != null
+              ? formatVram(gpuInfo.vram_bytes)
+              : "Unknown"}
+          </div>
+          <div>
+            EPs:{" "}
+            {gpuInfo.available_eps
+              .map((epOption) => epLabel(epOption))
+              .join(", ")}
+          </div>
+          <div>Opt: {gpuInfo.optimization}</div>
         </div>
       )}
 
@@ -206,6 +202,17 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
           <div>total: {formatSeconds(lastJobTimings.total_seconds)}</div>
         </div>
       )}
+
+      <div className="settings-footer">
+        <button
+          ref={aboutEntryRef}
+          type="button"
+          className="settings-about-link"
+          onClick={onOpenAbout}
+        >
+          About &amp; licenses
+        </button>
+      </div>
     </div>
   );
 }
