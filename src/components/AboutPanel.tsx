@@ -1,33 +1,14 @@
-import { type ReactNode, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { APP_LINKS, licenseUrlFor } from "../lib/licenseUrls";
 import { MODEL_REGISTRY } from "../lib/models.generated";
-import { openExternalUrl } from "../lib/openExternalUrl";
+import { isNonCommercialModel } from "../lib/ncLicense";
 import { invokeGetRuntimeInfo } from "../lib/tauri";
 import { useSettingsStore } from "../stores/settingsStore";
+import { ExternalLinkButton } from "./ExternalLinkButton";
 
 export type AboutPanelProps = {
   visible: boolean;
 };
-
-function ExternalLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        void openExternalUrl(href);
-      }}
-    >
-      {children}
-    </a>
-  );
-}
 
 export function AboutPanel({ visible }: AboutPanelProps) {
   const runtimeInfo = useSettingsStore((s) => s.runtimeInfo);
@@ -45,6 +26,14 @@ export function AboutPanel({ visible }: AboutPanelProps) {
   const appVersion = runtimeInfo?.app_version ?? "…";
   const ortVersion = runtimeInfo?.ort_version ?? "…";
 
+  const ncModeNames = useMemo(
+    () =>
+      MODEL_REGISTRY.filter((m) => isNonCommercialModel(m))
+        .map((m) => m.name)
+        .join(" and "),
+    [],
+  );
+
   return (
     <div className="about-panel" aria-hidden={!visible} inert={!visible}>
       <div className="about-identity">
@@ -57,9 +46,9 @@ export function AboutPanel({ visible }: AboutPanelProps) {
 
       <p className="about-mit">
         SwiftMask is open source under the{" "}
-        <ExternalLink href={APP_LINKS.mit}>MIT License</ExternalLink>. That
-        covers the application itself. The ONNX models are third-party works
-        with their own terms (see below).
+        <ExternalLinkButton url={APP_LINKS.mit}>MIT License</ExternalLinkButton>
+        . That covers the application itself. The ONNX models are third-party
+        works with their own terms (see below).
       </p>
 
       <div className="about-models-heading">Models</div>
@@ -82,9 +71,9 @@ export function AboutPanel({ visible }: AboutPanelProps) {
                 </td>
                 <td>
                   {licenseUrl ? (
-                    <ExternalLink href={licenseUrl}>
+                    <ExternalLinkButton url={licenseUrl}>
                       {model.license}
-                    </ExternalLink>
+                    </ExternalLinkButton>
                   ) : (
                     model.license
                   )}
@@ -95,16 +84,18 @@ export function AboutPanel({ visible }: AboutPanelProps) {
         </tbody>
       </table>
 
-      <p className="about-nc-footnote">
-        Balanced+ and Max Quality are CC BY-NC 4.0 (non-commercial). Personal
-        use is fine; commercial use requires a separate license from the model
-        rights holder.
-      </p>
+      {ncModeNames.length > 0 && (
+        <p className="about-nc-footnote">
+          {ncModeNames} are CC BY-NC 4.0 (non-commercial). Personal use is fine;
+          commercial use requires a separate license from the model rights
+          holder.
+        </p>
+      )}
 
       <div className="about-links">
-        <ExternalLink href={APP_LINKS.repo}>GitHub</ExternalLink>
+        <ExternalLinkButton url={APP_LINKS.repo}>GitHub</ExternalLinkButton>
         <span aria-hidden="true"> · </span>
-        <ExternalLink href={APP_LINKS.issues}>Issues</ExternalLink>
+        <ExternalLinkButton url={APP_LINKS.issues}>Issues</ExternalLinkButton>
       </div>
     </div>
   );

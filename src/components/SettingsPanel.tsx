@@ -13,7 +13,12 @@ import { isTheme } from "../lib/theme";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export type SettingsPanelProps = {
-  visible: boolean;
+  /**
+   * Settings shell is open (fetch lifecycle). View visibility / inert is owned
+   * by the modal-view wrapper in App so GPU/runtime are not re-fetched on
+   * About → Settings return.
+   */
+  shellOpen: boolean;
   onOpenAbout: () => void;
   aboutEntryRef?: RefObject<HTMLButtonElement | null>;
 };
@@ -32,7 +37,7 @@ function formatSeconds(seconds: number): string {
 }
 
 export function SettingsPanel({
-  visible,
+  shellOpen,
   onOpenAbout,
   aboutEntryRef,
 }: SettingsPanelProps) {
@@ -51,20 +56,21 @@ export function SettingsPanel({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!shellOpen) return;
     invokeDetectGpu()
       .then((info) => setGpuInfo(info))
       .catch((err: unknown) => {
         console.error("detect_gpu failed", err);
         showAppErrorNotice(err);
       });
+    // Prefetch for About; failures stay in console only — Settings no longer
+    // shows App/ORT, and About fetches again if still missing.
     invokeGetRuntimeInfo()
       .then((info) => setRuntimeInfo(info))
       .catch((err: unknown) => {
         console.error("get_runtime_info failed", err);
-        showAppErrorNotice(err);
       });
-  }, [visible, setGpuInfo, setRuntimeInfo]);
+  }, [shellOpen, setGpuInfo, setRuntimeInfo]);
 
   const handleEpChange = async (value: string) => {
     try {
@@ -103,7 +109,7 @@ export function SettingsPanel({
   };
 
   return (
-    <div className="settings-panel" aria-hidden={!visible} inert={!visible}>
+    <div className="settings-panel">
       <div className="settings-field">
         <label htmlFor="settings-theme">Theme</label>
         <select

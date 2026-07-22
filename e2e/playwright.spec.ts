@@ -295,4 +295,69 @@ test.describe("SwiftMask", () => {
       balancedRow.getByRole("button", { name: "Download" }),
     ).toHaveCount(0, { timeout: 10_000 });
   });
+
+  test("Settings About panel: Escape, focus, no GPU re-fetch", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByText("Drop an image here")).toBeVisible();
+
+    const settingsBtn = page.getByRole("button", { name: "Settings" });
+    await settingsBtn.click();
+
+    const shell = page.getByRole("dialog");
+    await expect(shell).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Settings", exact: true }),
+    ).toBeVisible();
+
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const state = window.__SWIFTMASK_MOCK__;
+          if (!state) throw new Error("mock missing");
+          return state.calls.filter((c) => c.cmd === "detect_gpu").length;
+        });
+      })
+      .toBeGreaterThan(0);
+
+    const gpuAfterOpen = await page.evaluate(() => {
+      const state = window.__SWIFTMASK_MOCK__;
+      if (!state) throw new Error("mock missing");
+      return state.calls.filter((c) => c.cmd === "detect_gpu").length;
+    });
+
+    await page.getByRole("button", { name: "About & licenses" }).click();
+    await expect(
+      page.getByRole("heading", { name: "About", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Back" })).toBeFocused();
+
+    // Legal links are buttons — no navigable external href in the webview.
+    await expect(page.locator('a[href^="http"]')).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "MIT License" }),
+    ).toBeVisible();
+    await expect(page.getByText("SwiftMask 0.1.0")).toBeVisible();
+    await expect(page.getByText("ONNX Runtime 1.24")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("heading", { name: "Settings", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "About & licenses" }),
+    ).toBeFocused();
+
+    const gpuAfterAboutRoundTrip = await page.evaluate(() => {
+      const state = window.__SWIFTMASK_MOCK__;
+      if (!state) throw new Error("mock missing");
+      return state.calls.filter((c) => c.cmd === "detect_gpu").length;
+    });
+    expect(gpuAfterAboutRoundTrip).toBe(gpuAfterOpen);
+
+    await page.keyboard.press("Escape");
+    await expect(shell).toHaveCount(0);
+    await expect(settingsBtn).toBeFocused();
+  });
 });

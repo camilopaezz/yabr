@@ -1131,15 +1131,19 @@ body.is-slider-dragging * {
 }
 
 .modal-header-start {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  /* Reserve space so the title does not jump when Back fades in. */
+  padding-left: 2.1em;
 }
 
-.modal-header h2 {
+.modal-title {
   margin: 0;
   font-size: 1.1rem;
+  min-width: 0;
 }
 
 .modal-back,
@@ -1149,7 +1153,92 @@ body.is-slider-dragging * {
 }
 
 .modal-back {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.modal-back.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/*
+ * Settings ↔ About crossfade with push navigation.
+ * Inactive view is taken out of flow (position:absolute) so shell height
+ * tracks the active panel only — avoids permanent empty space under Settings.
+ * Height can change on navigate; that tradeoff is intentional vs max(both).
+ */
+.modal-view-stack {
+  position: relative;
+  display: grid;
+  align-items: start;
+}
+
+.modal-view {
+  grid-area: 1 / 1;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    visibility 0s linear var(--duration-normal);
+}
+
+.modal-view:not(.is-active) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.modal-view--settings:not(.is-active) {
+  transform: translateX(-12px);
+}
+
+.modal-view--about:not(.is-active) {
+  transform: translateX(12px);
+}
+
+.modal-view.is-active {
+  position: relative;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+  visibility: visible;
+  z-index: 1;
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+/* System-browser “links” are buttons so the webview never navigates. */
+.link-button {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent, var(--fg-muted));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--fg);
 }
 
 .settings-panel {
@@ -1212,15 +1301,17 @@ body.is-slider-dragging * {
   line-height: 1.45;
 }
 
-.about-mit a,
-.about-models-table a,
-.about-links a {
+.about-mit .link-button,
+.about-models-table .link-button,
+.about-links .link-button,
+.nc-license-modal-license .link-button {
   color: var(--accent, var(--fg-muted));
 }
 
-.about-mit a:hover,
-.about-models-table a:hover,
-.about-links a:hover {
+.about-mit .link-button:hover,
+.about-models-table .link-button:hover,
+.about-links .link-button:hover,
+.nc-license-modal-license .link-button:hover {
   color: var(--fg);
 }
 
@@ -1431,7 +1522,7 @@ body.is-slider-dragging * {
   font-size: 0.85rem;
 }
 
-.nc-license-modal-license a {
+.nc-license-modal-license .link-button {
   color: var(--warn);
 }
 
@@ -1447,6 +1538,9 @@ body.is-slider-dragging * {
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
   .modal-card,
+  .modal-view,
+  .modal-back,
+  .modal-title,
   .download-modal-backdrop,
   .download-modal-card,
   .nc-license-modal-backdrop,
@@ -1462,6 +1556,8 @@ body.is-slider-dragging * {
      download modal can remain visible after success (stuck on "Verifying"). */
   .modal-backdrop.is-open,
   .modal-card.is-open,
+  .modal-view.is-active,
+  .modal-back.is-visible,
   .download-modal-backdrop.is-open,
   .download-modal-card.is-open,
   .nc-license-modal-backdrop.is-open,

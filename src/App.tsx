@@ -224,6 +224,7 @@ function App() {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      e.preventDefault();
       if (settingsView === "about") {
         setSettingsView("settings");
       } else {
@@ -253,9 +254,6 @@ function App() {
   const canCompare =
     current?.status === "done" &&
     Boolean(current.inputPath && current.outputPath);
-
-  const shellTitleId =
-    settingsView === "about" ? "about-title" : "settings-title";
 
   return (
     <div className={`app-shell${notice ? " has-notice" : ""}`}>
@@ -344,22 +342,22 @@ function App() {
                 className={`modal-card${settingsPresence.open ? " is-open" : ""}`}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby={shellTitleId}
+                aria-labelledby="settings-shell-title"
               >
                 <div className="modal-header">
                   <div className="modal-header-start">
-                    {settingsView === "about" && (
-                      <button
-                        ref={aboutBackRef}
-                        type="button"
-                        className="modal-back"
-                        aria-label="Back"
-                        onClick={backToSettings}
-                      >
-                        ←
-                      </button>
-                    )}
-                    <h2 id={shellTitleId}>
+                    <button
+                      ref={aboutBackRef}
+                      type="button"
+                      className={`modal-back${settingsView === "about" ? " is-visible" : ""}`}
+                      aria-label="Back"
+                      aria-hidden={settingsView !== "about"}
+                      tabIndex={settingsView === "about" ? undefined : -1}
+                      onClick={backToSettings}
+                    >
+                      ←
+                    </button>
+                    <h2 id="settings-shell-title" className="modal-title">
                       {settingsView === "about" ? "About" : "Settings"}
                     </h2>
                   </div>
@@ -378,19 +376,38 @@ function App() {
                   </button>
                 </div>
                 {/* Keep both mounted for the shell lifetime so Settings does not
-                    re-fetch GPU/runtime on every About → Settings return. */}
-                <div hidden={settingsView !== "settings"}>
-                  <SettingsPanel
-                    // Shell open, not view — avoid re-fetch on About → Settings.
-                    visible={settingsPresence.open}
-                    onOpenAbout={openAbout}
-                    aboutEntryRef={aboutEntryRef}
-                  />
-                </div>
-                <div hidden={settingsView !== "about"}>
-                  <AboutPanel
-                    visible={settingsPresence.open && settingsView === "about"}
-                  />
+                    re-fetch GPU/runtime on every About → Settings return.
+                    Crossfade + directional slide is CSS-driven via is-active. */}
+                <div className="modal-view-stack">
+                  <div
+                    className={`modal-view modal-view--settings${
+                      settingsView === "settings" ? " is-active" : ""
+                    }`}
+                    // Single a11y gate for the inactive view (panel itself stays
+                    // "shell-open" for fetch lifecycle).
+                    inert={settingsView !== "settings" ? true : undefined}
+                    aria-hidden={settingsView !== "settings"}
+                  >
+                    <SettingsPanel
+                      // Shell open, not view — avoid re-fetch on About → Settings.
+                      shellOpen={settingsPresence.open}
+                      onOpenAbout={openAbout}
+                      aboutEntryRef={aboutEntryRef}
+                    />
+                  </div>
+                  <div
+                    className={`modal-view modal-view--about${
+                      settingsView === "about" ? " is-active" : ""
+                    }`}
+                    inert={settingsView !== "about" ? true : undefined}
+                    aria-hidden={settingsView !== "about"}
+                  >
+                    <AboutPanel
+                      visible={
+                        settingsPresence.open && settingsView === "about"
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>

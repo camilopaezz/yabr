@@ -1,5 +1,5 @@
 import { NC_LICENSE_MODAL_COPY } from "../lib/ncLicense";
-import { openExternalUrl } from "../lib/openExternalUrl";
+import { ExternalLinkButton } from "./ExternalLinkButton";
 
 export type NcLicenseModalProps = {
   open: boolean;
@@ -28,15 +28,9 @@ export function NcLicenseModal({
           {NC_LICENSE_MODAL_COPY.commercialHint}
         </p>
         <p className="nc-license-modal-license">
-          <a
-            href={NC_LICENSE_MODAL_COPY.licenseUrl}
-            onClick={(e) => {
-              e.preventDefault();
-              void openExternalUrl(NC_LICENSE_MODAL_COPY.licenseUrl);
-            }}
-          >
+          <ExternalLinkButton url={NC_LICENSE_MODAL_COPY.licenseUrl}>
             {NC_LICENSE_MODAL_COPY.licenseLabel}
-          </a>
+          </ExternalLinkButton>
         </p>
         <div className="nc-license-modal-actions">
           <button type="button" onClick={onCancel}>
