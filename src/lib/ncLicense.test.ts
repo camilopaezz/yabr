@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { licenseUrlFor } from "./licenseUrls";
 import type { ModelMeta } from "./models";
 import { MODEL_REGISTRY } from "./models.generated";
 import {
   hasNcLicenseAck,
   isNonCommercialModel,
   NC_LICENSE_ACK_KEY,
+  NC_LICENSE_MODAL_COPY,
   needsNcLicenseAck,
   setNcLicenseAck,
   shouldShowNcBadge,
@@ -112,5 +114,17 @@ describe("needsNcLicenseAck", () => {
 
   it("skips for commercial models", () => {
     expect(needsNcLicenseAck(meta("isnet-general-use"))).toBe(false);
+  });
+});
+
+describe("NC_LICENSE_MODAL_COPY", () => {
+  it("uses the shared CC BY-NC 4.0 license URL", () => {
+    expect(NC_LICENSE_MODAL_COPY.licenseLabel).toBe("CC BY-NC 4.0");
+    expect(NC_LICENSE_MODAL_COPY.licenseUrl).toBe(
+      licenseUrlFor("CC BY-NC 4.0"),
+    );
+    expect(NC_LICENSE_MODAL_COPY.licenseUrl).toBe(
+      "https://creativecommons.org/licenses/by-nc/4.0/",
+    );
   });
 });

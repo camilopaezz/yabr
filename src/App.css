@@ -56,7 +56,8 @@
     var(--spicy-paprika)
   );
   --_dark-accent-fg: var(--floral-white);
-  --_dark-danger: #f2a39a;
+  /* Saturated red on dark chrome — not the light salmon that read as pink. */
+  --_dark-danger: #ef4444;
   --_dark-warn: #c9a86c;
   --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   --_dark-checkerboard-bg: color-mix(
@@ -1092,7 +1093,8 @@ body.is-slider-dragging * {
   padding: 24px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--duration-normal) var(--ease-out);
+  /* Snappy shell; keep in sync with useAnimatedPresence duration in App.tsx. */
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .modal-backdrop.is-open {
@@ -1111,10 +1113,10 @@ body.is-slider-dragging * {
   box-shadow: var(--shadow);
   color: var(--fg);
   opacity: 0;
-  transform: translateY(10px) scale(0.97);
+  transform: translateY(8px) scale(0.98);
   transition:
-    opacity var(--duration-normal) var(--ease-out),
-    transform var(--duration-normal) var(--ease-out);
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .modal-card.is-open {
@@ -1130,20 +1132,248 @@ body.is-slider-dragging * {
   margin-bottom: 16px;
 }
 
-.modal-header h2 {
+.modal-header-start {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  transition: gap var(--duration-normal) var(--ease-out);
+}
+
+.modal-header-start.has-back {
+  gap: 8px;
+}
+
+.modal-title {
   margin: 0;
   font-size: 1.1rem;
+  min-width: 0;
 }
 
 .modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.25em 0.55em;
   line-height: 1;
+}
+
+/* In-flow Back: collapsed on Settings, expands next to title on About.
+   Fixed square + flex centering so the arrow is optically centered. */
+.modal-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 0;
+  height: 1.85em;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-color: transparent;
+  pointer-events: none;
+  line-height: 1;
+  font-size: 1em;
+  transform: translateX(-6px);
+  transition:
+    width var(--duration-normal) var(--ease-out),
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out);
+}
+
+.modal-back.is-visible {
+  width: 1.85em;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  border-color: var(--border);
+}
+
+/*
+ * Settings ↔ About crossfade with push navigation.
+ * Inactive view is taken out of flow (position:absolute) so shell height
+ * tracks the active panel only — avoids permanent empty space under Settings.
+ * Height can change on navigate; that tradeoff is intentional vs max(both).
+ */
+.modal-view-stack {
+  position: relative;
+  display: grid;
+  align-items: start;
+}
+
+.modal-view {
+  grid-area: 1 / 1;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    visibility 0s linear var(--duration-normal);
+}
+
+.modal-view:not(.is-active) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.modal-view--settings:not(.is-active) {
+  transform: translateX(-12px);
+}
+
+.modal-view--about:not(.is-active) {
+  transform: translateX(12px);
+}
+
+.modal-view.is-active {
+  position: relative;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+  visibility: visible;
+  z-index: 1;
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+/* System-browser “links” are buttons so the webview never navigates. */
+.link-button {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent, var(--fg-muted));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--fg);
 }
 
 .settings-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.settings-footer {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-about-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent, var(--fg-muted));
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-about-link:hover {
+  color: var(--fg);
+}
+
+.about-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 0.9rem;
+}
+
+.about-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.about-app-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.about-versions {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.about-mit {
+  margin: 0;
+  color: var(--fg);
+  line-height: 1.45;
+}
+
+.about-mit .link-button,
+.about-models-table .link-button,
+.about-links .link-button,
+.nc-license-modal-license .link-button {
+  color: var(--accent, var(--fg-muted));
+}
+
+.about-mit .link-button:hover,
+.about-models-table .link-button:hover,
+.about-links .link-button:hover,
+.nc-license-modal-license .link-button:hover {
+  color: var(--fg);
+}
+
+.about-models-heading {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.about-models-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.about-models-table th,
+.about-models-table td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  vertical-align: top;
+}
+
+.about-models-table th {
+  font-weight: 500;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.about-models-table code {
+  font-size: 0.8em;
+}
+
+.about-nc-footnote {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.about-links {
+  font-size: 0.85rem;
 }
 
 .settings-field {
@@ -1313,7 +1543,7 @@ body.is-slider-dragging * {
   font-size: 0.85rem;
 }
 
-.nc-license-modal-license a {
+.nc-license-modal-license .link-button {
   color: var(--warn);
 }
 
@@ -1329,6 +1559,10 @@ body.is-slider-dragging * {
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
   .modal-card,
+  .modal-view,
+  .modal-back,
+  .modal-header-start,
+  .modal-title,
   .download-modal-backdrop,
   .download-modal-card,
   .nc-license-modal-backdrop,
@@ -1344,6 +1578,8 @@ body.is-slider-dragging * {
      download modal can remain visible after success (stuck on "Verifying"). */
   .modal-backdrop.is-open,
   .modal-card.is-open,
+  .modal-view.is-active,
+  .modal-back.is-visible,
   .download-modal-backdrop.is-open,
   .download-modal-card.is-open,
   .nc-license-modal-backdrop.is-open,
