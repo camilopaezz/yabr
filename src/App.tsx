@@ -45,7 +45,8 @@ function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsView, setSettingsView] =
     useState<SettingsShellView>("settings");
-  const settingsPresence = useAnimatedPresence(settingsVisible);
+  // Match --duration-fast (150ms) on .modal-backdrop / .modal-card.
+  const settingsPresence = useAnimatedPresence(settingsVisible, 150);
   const [ready, setReady] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);

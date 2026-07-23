@@ -1092,7 +1092,8 @@ body.is-slider-dragging * {
   padding: 24px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--duration-normal) var(--ease-out);
+  /* Snappy shell; keep in sync with useAnimatedPresence duration in App.tsx. */
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .modal-backdrop.is-open {
@@ -1111,10 +1112,10 @@ body.is-slider-dragging * {
   box-shadow: var(--shadow);
   color: var(--fg);
   opacity: 0;
-  transform: translateY(10px) scale(0.97);
+  transform: translateY(8px) scale(0.98);
   transition:
-    opacity var(--duration-normal) var(--ease-out),
-    transform var(--duration-normal) var(--ease-out);
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .modal-card.is-open {
@@ -1148,38 +1149,42 @@ body.is-slider-dragging * {
   min-width: 0;
 }
 
-.modal-back,
 .modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.25em 0.55em;
   line-height: 1;
 }
 
 /* In-flow Back: collapsed on Settings, expands next to title on About.
-   Avoids permanent title indent on Settings and absolute overlap on About. */
+   Fixed square + flex centering so the arrow is optically centered. */
 .modal-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   box-sizing: border-box;
-  max-width: 0;
+  width: 0;
+  height: 1.85em;
   margin: 0;
-  padding-left: 0;
-  padding-right: 0;
+  padding: 0;
   overflow: hidden;
   opacity: 0;
   border-color: transparent;
   pointer-events: none;
+  line-height: 1;
+  font-size: 1em;
   transform: translateX(-6px);
   transition:
-    max-width var(--duration-normal) var(--ease-out),
-    padding var(--duration-normal) var(--ease-out),
+    width var(--duration-normal) var(--ease-out),
     opacity var(--duration-normal) var(--ease-out),
     transform var(--duration-normal) var(--ease-out),
     border-color var(--duration-normal) var(--ease-out);
 }
 
 .modal-back.is-visible {
-  max-width: 3em;
-  padding-left: 0.25em;
-  padding-right: 0.55em;
+  width: 1.85em;
   opacity: 1;
   transform: none;
   pointer-events: auto;
