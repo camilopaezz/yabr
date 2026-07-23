@@ -316,6 +316,36 @@ describe("currentImage", () => {
       expect(await first).toBe("started");
       expect(removeBackground).toHaveBeenCalledTimes(1);
     });
+
+    it("nudges store after processGate clears so FileBlock re-enables", async () => {
+      // Production: done event often arrives before remove_image_background
+      // returns, while processGate is still true. FileBlock ORs isProcessBusy()
+      // into disabled — without a post-gate store update it stays disabled forever.
+      imageStore.getState().set(makeReadyItem({ id: "img-nudge" }));
+      const removeBackground = vi.fn(async (job: { id: string }) => {
+        applyDone({
+          id: job.id,
+          output_path: "/tmp/out.png",
+          timings: { stages: [], total_seconds: 0.1 },
+        });
+        expect(isProcessBusy()).toBe(true);
+        expect(imageStore.getState().current?.status).toBe("done");
+      });
+      const deps = makeDeps({ removeBackground });
+
+      let subscriberCalls = 0;
+      const unsub = imageStore.subscribe(() => {
+        subscriberCalls += 1;
+      });
+      const before = subscriberCalls;
+      expect(await startProcess(deps)).toBe("started");
+      unsub();
+
+      expect(imageStore.getState().current?.status).toBe("done");
+      expect(isProcessBusy()).toBe(false);
+      // At least one notify after processGate=false (the finally nudge).
+      expect(subscriberCalls).toBeGreaterThan(before);
+    });
   });
 
   describe("cancelProcess / clearCurrent", () => {

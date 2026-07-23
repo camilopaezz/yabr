@@ -263,6 +263,14 @@ export async function startProcess(
     }
   } finally {
     processGate = false;
+    // Done/error events often land before this invoke returns. FileBlock (and
+    // anything else) that ORs isProcessBusy() into disabled state will still
+    // see processGate=true on that render and never re-read the gate unless we
+    // nudge store subscribers after clearing it (same pattern as cancelProcess).
+    const still = imageStore.getState().current;
+    if (still?.id === startedId) {
+      imageStore.getState().patch({ status: still.status });
+    }
   }
 }
 

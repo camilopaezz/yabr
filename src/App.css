@@ -56,7 +56,8 @@
     var(--spicy-paprika)
   );
   --_dark-accent-fg: var(--floral-white);
-  --_dark-danger: #f2a39a;
+  /* Saturated red on dark chrome — not the light salmon that read as pink. */
+  --_dark-danger: #ef4444;
   --_dark-warn: #c9a86c;
   --_dark-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   --_dark-checkerboard-bg: color-mix(
