@@ -66,9 +66,14 @@ Not re-documented elsewhere as a living backlog:
 |------|--------|
 | Beta update channel | A16 stable-only today (`/releases/latest`); second endpoint + Settings preference later |
 | Real desktop E2E | `e2e/tauri-webdriver.config.ts` is a stub; mocked Playwright only proves UI wiring |
-| About / licenses panel | MIT app + per-model attributions (NC gate for RMBG is already in) |
 | Local diagnostics | Rotating local log + “copy diagnostics” (no network) |
 | Large-image guard | Fail clearly or warn before OOM/slow runs on huge inputs |
 | First-run empty-state hint | Beyond the acceleration/benchmark spinner |
 | `ort` 2.0 RC | Release-candidate dependency; revisit when stable |
 | CSP | `null` in `tauri.conf.json` — low risk for local app; tighten later |
+
+### Done (ship / 1.0 backlog)
+
+| Item | Notes |
+|------|--------|
+| About / licenses panel | Settings → “About & licenses”; MIT app notice + model table from static registry; external links via `openUrl`. Optional later: `license_url` on the Rust model registry / codegen when the catalog grows (FE map is enough for now). |

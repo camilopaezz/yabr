@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import appLogoSvg from "./assets/app-logo.svg?raw";
+import { AboutPanel } from "./components/AboutPanel";
 import { AppNotice } from "./components/AppNotice";
 import { FileBlock } from "./components/FileBlock";
 import { ImagePanel } from "./components/ImagePanel";
@@ -40,13 +41,20 @@ import { settingsStore, useSettingsStore } from "./stores/settingsStore";
 import { useUiStore } from "./stores/uiStore";
 import "./App.css";
 
+type SettingsShellView = "settings" | "about";
+
 function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const settingsPresence = useAnimatedPresence(settingsVisible);
+  const [settingsView, setSettingsView] =
+    useState<SettingsShellView>("settings");
+  // Match --duration-fast (150ms) on .modal-backdrop / .modal-card.
+  const settingsPresence = useAnimatedPresence(settingsVisible, 150);
   const [ready, setReady] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsCloseRef = useRef<HTMLButtonElement>(null);
+  const aboutBackRef = useRef<HTMLButtonElement>(null);
+  const aboutEntryRef = useRef<HTMLButtonElement>(null);
   const current = useImageStore((state) => state.current);
   const ep = useSettingsStore((state) => state.ep);
   const mode = useSettingsStore((state) => state.mode);
@@ -208,6 +216,7 @@ function App() {
   }, [ready]);
 
   const settingsWasOpenRef = useRef(settingsPresence.open);
+  const prevSettingsViewRef = useRef(settingsView);
 
   useKeyboardShortcuts({
     ready,
@@ -217,9 +226,19 @@ function App() {
     modalBlocksShortcuts,
   });
 
+  // Reset after exit animation unmounts so the fade still shows About if that
+  // was the active view. Next open always starts on Settings.
+  useEffect(() => {
+    if (!settingsPresence.rendered) {
+      setSettingsView("settings");
+    }
+  }, [settingsPresence.rendered]);
+
   useEffect(() => {
     const wasOpen = settingsWasOpenRef.current;
+    const prevView = prevSettingsViewRef.current;
     settingsWasOpenRef.current = settingsPresence.open;
+    prevSettingsViewRef.current = settingsView;
 
     if (!settingsPresence.open) {
       if (wasOpen) {
@@ -228,15 +247,53 @@ function App() {
       return;
     }
 
+    // Shell just opened → focus close (Settings is the initial view).
+    if (!wasOpen) {
+      settingsCloseRef.current?.focus();
+      return;
+    }
+
+    // Navigated Settings → About → focus Back.
+    if (settingsView === "about" && prevView !== "about") {
+      aboutBackRef.current?.focus();
+      return;
+    }
+
+    // Navigated About → Settings (Back / Escape) → focus About entry.
+    if (settingsView === "settings" && prevView === "about") {
+      aboutEntryRef.current?.focus();
+    }
+  }, [settingsPresence.open, settingsView]);
+
+  useEffect(() => {
+    if (!settingsPresence.open) return;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSettingsVisible(false);
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (settingsView === "about") {
+        setSettingsView("settings");
+      } else {
+        setSettingsVisible(false);
+      }
     };
     window.addEventListener("keydown", onKey);
-    settingsCloseRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [settingsPresence.open]);
+  }, [settingsPresence.open, settingsView]);
+
+  const openAbout = () => {
+    setSettingsView("about");
+  };
+
+  const backToSettings = () => {
+    setSettingsView("settings");
+  };
+
+  const closeSettingsShell = () => {
+    setSettingsVisible(false);
+  };
 
   // Frameless window: always mount TitleBar so drag/close work during first-run
   // and cold-start. Blocker overlays content only (CSS leaves titlebar free).
@@ -324,28 +381,84 @@ function App() {
               className={`modal-backdrop${settingsPresence.open ? " is-open" : ""}`}
               role="presentation"
               onClick={(e) => {
-                if (e.target === e.currentTarget) setSettingsVisible(false);
+                if (e.target === e.currentTarget) closeSettingsShell();
               }}
             >
               <div
                 className={`modal-card${settingsPresence.open ? " is-open" : ""}`}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="settings-title"
+                aria-labelledby="settings-shell-title"
               >
                 <div className="modal-header">
-                  <h2 id="settings-title">Settings</h2>
+                  <div
+                    className={`modal-header-start${
+                      settingsView === "about" ? " has-back" : ""
+                    }`}
+                  >
+                    <button
+                      ref={aboutBackRef}
+                      type="button"
+                      className={`modal-back${settingsView === "about" ? " is-visible" : ""}`}
+                      aria-label="Back"
+                      aria-hidden={settingsView !== "about"}
+                      tabIndex={settingsView === "about" ? undefined : -1}
+                      onClick={backToSettings}
+                    >
+                      ←
+                    </button>
+                    <h2 id="settings-shell-title" className="modal-title">
+                      {settingsView === "about" ? "About" : "Settings"}
+                    </h2>
+                  </div>
                   <button
                     ref={settingsCloseRef}
                     type="button"
                     className="modal-close"
-                    aria-label="Close settings"
-                    onClick={() => setSettingsVisible(false)}
+                    aria-label={
+                      settingsView === "about"
+                        ? "Close about"
+                        : "Close settings"
+                    }
+                    onClick={closeSettingsShell}
                   >
                     ✕
                   </button>
                 </div>
-                <SettingsPanel visible={settingsPresence.open} />
+                {/* Keep both mounted for the shell lifetime so Settings does not
+                    re-fetch GPU/runtime on every About → Settings return.
+                    Crossfade + directional slide is CSS-driven via is-active. */}
+                <div className="modal-view-stack">
+                  <div
+                    className={`modal-view modal-view--settings${
+                      settingsView === "settings" ? " is-active" : ""
+                    }`}
+                    // Single a11y gate for the inactive view (panel itself stays
+                    // "shell-open" for fetch lifecycle).
+                    inert={settingsView !== "settings" ? true : undefined}
+                    aria-hidden={settingsView !== "settings"}
+                  >
+                    <SettingsPanel
+                      // Shell open, not view — avoid re-fetch on About → Settings.
+                      shellOpen={settingsPresence.open}
+                      onOpenAbout={openAbout}
+                      aboutEntryRef={aboutEntryRef}
+                    />
+                  </div>
+                  <div
+                    className={`modal-view modal-view--about${
+                      settingsView === "about" ? " is-active" : ""
+                    }`}
+                    inert={settingsView !== "about" ? true : undefined}
+                    aria-hidden={settingsView !== "about"}
+                  >
+                    <AboutPanel
+                      visible={
+                        settingsPresence.open && settingsView === "about"
+                      }
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
