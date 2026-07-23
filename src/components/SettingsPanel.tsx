@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useState } from "react";
 import { epLabel } from "../lib/epLabel";
+import { showAppErrorNotice } from "../lib/showAppErrorNotice";
 import {
   invokeDetectGpu,
   invokeGetConfig,
@@ -12,7 +13,14 @@ import { isTheme } from "../lib/theme";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export type SettingsPanelProps = {
-  visible: boolean;
+  /**
+   * Settings shell is open (fetch lifecycle). View visibility / inert is owned
+   * by the modal-view wrapper in App so GPU/runtime are not re-fetched on
+   * About → Settings return.
+   */
+  shellOpen: boolean;
+  onOpenAbout: () => void;
+  aboutEntryRef?: RefObject<HTMLButtonElement | null>;
 };
 
 function formatVram(bytes: number): string {
@@ -28,13 +36,16 @@ function formatSeconds(seconds: number): string {
   return `${seconds.toFixed(3)}s`;
 }
 
-export function SettingsPanel({ visible }: SettingsPanelProps) {
+export function SettingsPanel({
+  shellOpen,
+  onOpenAbout,
+  aboutEntryRef,
+}: SettingsPanelProps) {
   const {
     ep,
     outputDir,
     theme,
     gpuInfo,
-    runtimeInfo,
     lastJobTimings,
     setEp: setEpInStore,
     setOutputDir,
@@ -45,14 +56,21 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!shellOpen) return;
     invokeDetectGpu()
       .then((info) => setGpuInfo(info))
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.error("detect_gpu failed", err);
+        showAppErrorNotice(err);
+      });
+    // Prefetch for About; failures stay in console only — Settings no longer
+    // shows App/ORT, and About fetches again if still missing.
     invokeGetRuntimeInfo()
       .then((info) => setRuntimeInfo(info))
-      .catch(() => {});
-  }, [visible, setGpuInfo, setRuntimeInfo]);
+      .catch((err: unknown) => {
+        console.error("get_runtime_info failed", err);
+      });
+  }, [shellOpen, setGpuInfo, setRuntimeInfo]);
 
   const handleEpChange = async (value: string) => {
     try {
@@ -60,6 +78,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       setEpInStore(value);
     } catch (err) {
       console.error("set_ep failed", err);
+      showAppErrorNotice(err);
     }
   };
 
@@ -71,6 +90,7 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       }
     } catch (err) {
       console.error("pick_output_dir failed", err);
+      showAppErrorNotice(err);
     }
   };
 
@@ -82,13 +102,14 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
       setEpInStore(config.execution_provider);
     } catch (err) {
       console.error("benchmark failed", err);
+      showAppErrorNotice(err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="settings-panel" aria-hidden={!visible} inert={!visible}>
+    <div className="settings-panel">
       <div className="settings-field">
         <label htmlFor="settings-theme">Theme</label>
         <select
@@ -157,31 +178,22 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
         </button>
       </div>
 
-      {(gpuInfo || runtimeInfo) && (
+      {gpuInfo && (
         <div className="settings-meta">
-          {gpuInfo && (
-            <>
-              <div>GPU: {gpuInfo.vendor}</div>
-              <div>
-                VRAM:{" "}
-                {gpuInfo.vram_bytes != null
-                  ? formatVram(gpuInfo.vram_bytes)
-                  : "Unknown"}
-              </div>
-              <div>
-                EPs:{" "}
-                {gpuInfo.available_eps
-                  .map((epOption) => epLabel(epOption))
-                  .join(", ")}
-              </div>
-              <div>Opt: {gpuInfo.optimization}</div>
-            </>
-          )}
-          {runtimeInfo && (
-            <div>
-              App: {runtimeInfo.app_version} · ORT: {runtimeInfo.ort_version}
-            </div>
-          )}
+          <div>GPU: {gpuInfo.vendor}</div>
+          <div>
+            VRAM:{" "}
+            {gpuInfo.vram_bytes != null
+              ? formatVram(gpuInfo.vram_bytes)
+              : "Unknown"}
+          </div>
+          <div>
+            EPs:{" "}
+            {gpuInfo.available_eps
+              .map((epOption) => epLabel(epOption))
+              .join(", ")}
+          </div>
+          <div>Opt: {gpuInfo.optimization}</div>
         </div>
       )}
 
@@ -196,6 +208,17 @@ export function SettingsPanel({ visible }: SettingsPanelProps) {
           <div>total: {formatSeconds(lastJobTimings.total_seconds)}</div>
         </div>
       )}
+
+      <div className="settings-footer">
+        <button
+          ref={aboutEntryRef}
+          type="button"
+          className="settings-about-link"
+          onClick={onOpenAbout}
+        >
+          About &amp; licenses
+        </button>
+      </div>
     </div>
   );
 }
